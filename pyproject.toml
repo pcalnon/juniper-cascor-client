@@ -1,0 +1,101 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "juniper-cascor-client"
+version = "0.1.0"
+description = "HTTP/WebSocket client for the JuniperCascor neural network training service"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Paul Calnon" }]
+requires-python = ">=3.11"
+keywords = ["juniper", "cascade-correlation", "neural-network", "machine-learning", "api-client"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "requests>=2.28.0",
+    "urllib3>=2.0.0",
+    "websockets>=11.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-timeout>=2.2.0",
+    "pytest-asyncio>=0.21.0",
+    "responses>=0.23.0",
+]
+dev = [
+    "juniper-cascor-client[test]",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.0.0",
+    "flake8>=7.0.0",
+    "types-requests>=2.28.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/pcalnon/juniper-cascor-client"
+Repository = "https://github.com/pcalnon/juniper-cascor-client"
+Documentation = "https://github.com/pcalnon/juniper-cascor-client#readme"
+Issues = "https://github.com/pcalnon/juniper-cascor-client/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["juniper_cascor_client*"]
+
+[tool.setuptools.package-data]
+juniper_cascor_client = ["py.typed"]
+
+[tool.black]
+line-length = 120
+target-version = ["py311", "py312", "py313", "py314"]
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["juniper_cascor_client"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = false
+strict = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["-ra", "-q", "--strict-markers"]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests requiring live service",
+]
+timeout = 30
+
+[tool.coverage.run]
+source = ["juniper_cascor_client"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

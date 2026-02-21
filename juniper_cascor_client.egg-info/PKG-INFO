@@ -1,0 +1,153 @@
+Metadata-Version: 2.4
+Name: juniper-cascor-client
+Version: 0.1.0
+Summary: HTTP/WebSocket client for the JuniperCascor neural network training service
+Author: Paul Calnon
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/pcalnon/juniper-cascor-client
+Project-URL: Repository, https://github.com/pcalnon/juniper-cascor-client
+Project-URL: Documentation, https://github.com/pcalnon/juniper-cascor-client#readme
+Project-URL: Issues, https://github.com/pcalnon/juniper-cascor-client/issues
+Keywords: juniper,cascade-correlation,neural-network,machine-learning,api-client
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Typing :: Typed
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: requests>=2.28.0
+Requires-Dist: urllib3>=2.0.0
+Requires-Dist: websockets>=11.0
+Provides-Extra: test
+Requires-Dist: pytest>=7.0.0; extra == "test"
+Requires-Dist: pytest-cov>=4.0.0; extra == "test"
+Requires-Dist: pytest-timeout>=2.2.0; extra == "test"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "test"
+Requires-Dist: responses>=0.23.0; extra == "test"
+Provides-Extra: dev
+Requires-Dist: juniper-cascor-client[test]; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: isort>=5.12.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+Requires-Dist: flake8>=7.0.0; extra == "dev"
+Requires-Dist: types-requests>=2.28.0; extra == "dev"
+Dynamic: license-file
+
+# juniper-cascor-client
+
+Python HTTP/WebSocket client for the JuniperCascor cascade correlation neural network training service.
+
+## Installation
+
+```bash
+pip install juniper-cascor-client
+```
+
+## Usage
+
+### REST Client
+
+```python
+from juniper_cascor_client import JuniperCascorClient
+
+with JuniperCascorClient("http://localhost:8200") as client:
+    # Create a network
+    client.create_network(input_size=2, output_size=2, learning_rate=0.01)
+
+    # Start training
+    client.start_training(
+        dataset={"source": "inline"},
+        inline_data={
+            "train_x": [[0, 0], [1, 0], [0, 1], [1, 1]],
+            "train_y": [[1, 0], [0, 1], [0, 1], [1, 0]],
+        },
+        epochs=100,
+    )
+
+    # Check status
+    status = client.get_training_status()
+    print(status["data"]["training_active"])
+
+    # Get metrics
+    metrics = client.get_metrics()
+    print(f"Loss: {metrics['data']['train_loss']}")
+```
+
+### WebSocket Training Stream
+
+```python
+import asyncio
+from juniper_cascor_client import CascorTrainingStream
+
+async def monitor():
+    async with CascorTrainingStream("ws://localhost:8200") as stream:
+        async for message in stream:
+            if message["type"] == "metrics":
+                print(f"Epoch {message['data']['epoch']}: loss={message['data']['train_loss']}")
+            elif message["type"] == "cascade_add":
+                print(f"New hidden unit added!")
+
+asyncio.run(monitor())
+```
+
+### WebSocket Control
+
+```python
+import asyncio
+from juniper_cascor_client import CascorControlStream
+
+async def control():
+    async with CascorControlStream("ws://localhost:8200") as ctrl:
+        result = await ctrl.command("start", {"epochs": 200})
+        print(result)
+
+asyncio.run(control())
+```
+
+## API Reference
+
+### JuniperCascorClient
+
+| Method | Description |
+|--------|-------------|
+| `health_check()` | Service health check |
+| `is_alive()` | Liveness probe |
+| `is_ready()` | Readiness probe |
+| `wait_for_ready(timeout)` | Wait for service readiness |
+| `create_network(**kwargs)` | Create a CasCor network |
+| `get_network()` | Get network state |
+| `delete_network()` | Destroy network |
+| `get_topology()` | Network topology for visualization |
+| `get_statistics()` | Network weight statistics |
+| `start_training(...)` | Start async training |
+| `stop_training()` | Stop training |
+| `pause_training()` | Pause training |
+| `resume_training()` | Resume training |
+| `reset_training()` | Reset state |
+| `get_training_status()` | Current training status |
+| `get_training_params()` | Training parameters |
+| `get_metrics()` | Current metrics |
+| `get_metrics_history(count)` | Metrics history |
+| `get_dataset()` | Dataset metadata |
+| `get_decision_boundary(resolution)` | Decision boundary grid |
+
+### CascorTrainingStream
+
+Async WebSocket client for `/ws/training`. Supports async iteration and callbacks.
+
+### CascorControlStream
+
+Async WebSocket client for `/ws/control`. Send commands and receive responses.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
