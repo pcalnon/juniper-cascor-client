@@ -4,7 +4,6 @@ Provides async iteration over training metrics, state changes, topology
 updates, and cascade events. Also supports sending control commands.
 """
 
-import asyncio
 import json
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
@@ -178,7 +177,7 @@ class CascorControlStream:
             self._ws = await websockets.connect(url, additional_headers=extra_headers)
             # Read the connection_established message
             raw = await self._ws.recv()
-            _msg = json.loads(raw)
+            json.loads(raw)  # Consume connection_established message
         except (OSError, websockets.exceptions.WebSocketException) as e:
             raise JuniperCascorConnectionError(f"Failed to connect to {url}: {e}") from e
 

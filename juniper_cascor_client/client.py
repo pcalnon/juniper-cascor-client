@@ -5,7 +5,7 @@ and visualization data access for JuniperCascor consumers.
 """
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -269,7 +269,10 @@ class JuniperCascorClient:
 
         try:
             body = response.json()
-            error_msg = body.get("error", {}).get("message", response.text) if isinstance(body.get("error"), dict) else body.get("detail", response.text)
+            if isinstance(body.get("error"), dict):
+                error_msg = body.get("error", {}).get("message", response.text)
+            else:
+                error_msg = body.get("detail", response.text)
         except (ValueError, KeyError):
             error_msg = response.text
 
