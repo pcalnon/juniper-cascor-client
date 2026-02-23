@@ -104,6 +104,16 @@ Async WebSocket client for `/ws/training`. Supports async iteration and callback
 
 Async WebSocket client for `/ws/control`. Send commands and receive responses.
 
+## Juniper Ecosystem
+
+This package is part of the Juniper Cascade Correlation Neural Network Research Platform.
+
+| Package | Description | Install |
+|---------|-------------|---------|
+| [juniper-data-client](https://github.com/pcalnon/juniper-data-client) | Dataset service client | `pip install juniper-data-client` |
+| [juniper-cascor-client](https://github.com/pcalnon/juniper-cascor-client) | Neural network service client (this package) | `pip install juniper-cascor-client` |
+| [juniper-cascor-worker](https://github.com/pcalnon/juniper-cascor-worker) | Distributed training worker | `pip install juniper-cascor-worker` |
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
