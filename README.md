@@ -2,6 +2,15 @@
 
 Python HTTP/WebSocket client for the JuniperCascor cascade correlation neural network training service.
 
+## Ecosystem Compatibility
+
+This package is part of the [Juniper](https://github.com/pcalnon/juniper-ml) ecosystem.
+Compatible with:
+
+| juniper-data | juniper-cascor | juniper-canopy |
+|---|---|---|
+| 0.4.x | 0.3.x | 0.2.x |
+
 ## Installation
 
 ```bash
