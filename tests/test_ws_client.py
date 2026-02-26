@@ -29,6 +29,16 @@ class TestCascorTrainingStream:
         stream = CascorTrainingStream("ws://example.com:9000/")
         assert stream.base_url == "ws://example.com:9000"
 
+    def test_api_key_from_env(self, monkeypatch):
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEY", "env-ws-key")
+        stream = CascorTrainingStream()
+        assert stream.api_key == "env-ws-key"
+
+    def test_explicit_api_key_overrides_env(self, monkeypatch):
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEY", "env-ws-key")
+        stream = CascorTrainingStream(api_key="explicit-key")
+        assert stream.api_key == "explicit-key"
+
     @pytest.mark.asyncio
     async def test_connect_calls_websockets(self):
         mock_ws = AsyncMock()
@@ -149,6 +159,16 @@ class TestCascorControlStream:
     def test_init_defaults(self):
         ctrl = CascorControlStream()
         assert ctrl.base_url == "ws://localhost:8200"
+
+    def test_api_key_from_env(self, monkeypatch):
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEY", "env-ctrl-key")
+        ctrl = CascorControlStream()
+        assert ctrl.api_key == "env-ctrl-key"
+
+    def test_explicit_api_key_overrides_env(self, monkeypatch):
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEY", "env-ctrl-key")
+        ctrl = CascorControlStream(api_key="explicit-key")
+        assert ctrl.api_key == "explicit-key"
 
     @pytest.mark.asyncio
     async def test_connect(self):

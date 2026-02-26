@@ -50,6 +50,20 @@ class TestClientInit:
         assert client.session.headers["X-API-Key"] == "test-key-123"
         client.close()
 
+    def test_api_key_from_env(self, monkeypatch):
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEY", "env-key-456")
+        client = JuniperCascorClient()
+        assert client.api_key == "env-key-456"
+        assert client.session.headers["X-API-Key"] == "env-key-456"
+        client.close()
+
+    def test_explicit_api_key_overrides_env(self, monkeypatch):
+        monkeypatch.setenv("JUNIPER_CASCOR_API_KEY", "env-key-456")
+        client = JuniperCascorClient(api_key="explicit-key-789")
+        assert client.api_key == "explicit-key-789"
+        assert client.session.headers["X-API-Key"] == "explicit-key-789"
+        client.close()
+
     def test_context_manager(self):
         with JuniperCascorClient() as client:
             assert client is not None

@@ -4,6 +4,7 @@ Provides network lifecycle management, training control, metrics retrieval,
 and visualization data access for JuniperCascor consumers.
 """
 
+import os
 import time
 from typing import Any, Dict, Optional
 
@@ -45,7 +46,7 @@ class JuniperCascorClient:
         self.base_url = base_url.rstrip("/")
         self.api_url = f"{self.base_url}/v1"
         self.timeout = timeout
-        self.api_key = api_key
+        self.api_key = api_key or os.environ.get("JUNIPER_CASCOR_API_KEY")
 
         self.session = requests.Session()
 

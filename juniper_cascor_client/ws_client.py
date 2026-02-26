@@ -5,6 +5,7 @@ updates, and cascade events. Also supports sending control commands.
 """
 
 import json
+import os
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 import websockets
@@ -40,7 +41,7 @@ class CascorTrainingStream:
         api_key: Optional[str] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
+        self.api_key = api_key or os.environ.get("JUNIPER_CASCOR_API_KEY")
         self._ws: Optional[ClientConnection] = None
         self._callbacks: Dict[str, List[Callable[[Dict[str, Any]], None]]] = {}
 
@@ -164,7 +165,7 @@ class CascorControlStream:
         api_key: Optional[str] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
+        self.api_key = api_key or os.environ.get("JUNIPER_CASCOR_API_KEY")
         self._ws: Optional[ClientConnection] = None
 
     async def connect(self) -> None:
