@@ -36,8 +36,8 @@ isort --check-only --diff juniper_cascor_client
 | File | Purpose |
 |------|---------|
 | `juniper_cascor_client/client.py` | REST client class |
-| `juniper_cascor_client/training_stream.py` | WebSocket training stream |
-| `juniper_cascor_client/control_stream.py` | WebSocket control stream |
+| `juniper_cascor_client/ws_client.py` | WebSocket client for training/control streams |
+| `juniper_cascor_client/exceptions.py` | Client exception classes |
 | `juniper_cascor_client/__init__.py` | Public API exports |
 | `pyproject.toml` | Package config, dependencies |
 | `tests/` | Test suite (pytest, pytest-asyncio) |
