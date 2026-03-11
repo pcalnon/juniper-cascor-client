@@ -496,7 +496,7 @@ class TestCallbacks:
         await stream.listen()
 
         for msg_type, cb in callbacks.items():
-            cb.assert_called_once(), f"Callback for '{msg_type}' should have been called exactly once"
+            assert cb.call_count == 1, f"Callback for '{msg_type}' should have been called exactly once"
         await stream.disconnect()
 
 

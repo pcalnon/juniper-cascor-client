@@ -14,8 +14,8 @@ License: MIT License
 import math
 from typing import Any, Dict, List
 
-
 # ─── Metric Curve Generators ────────────────────────────────────────────────
+
 
 def generate_loss_curve(epoch: int, initial_loss: float = 2.5, decay_rate: float = 0.05, noise_scale: float = 0.02) -> float:
     """Generate a realistic training loss value using exponential decay.
@@ -116,6 +116,7 @@ def generate_metrics_snapshot(epoch: int, scenario: str = "two_spiral_training")
 
 # ─── Topology Templates ─────────────────────────────────────────────────────
 
+
 def build_cascor_topology(
     input_size: int = 2,
     output_size: int = 1,
@@ -142,58 +143,70 @@ def build_cascor_topology(
     input_layer_nodes = []
     for i in range(input_size):
         node_id = f"input_{i}"
-        nodes.append({
-            "id": node_id,
-            "type": "input",
-            "layer": 0,
-            "activation": "linear",
-            "bias": 0.0,
-        })
+        nodes.append(
+            {
+                "id": node_id,
+                "type": "input",
+                "layer": 0,
+                "activation": "linear",
+                "bias": 0.0,
+            }
+        )
         input_layer_nodes.append(node_id)
 
     # Bias node
     bias_id = "bias_0"
-    nodes.append({
-        "id": bias_id,
-        "type": "bias",
-        "layer": 0,
-        "activation": "constant",
-        "bias": 1.0,
-    })
+    nodes.append(
+        {
+            "id": bias_id,
+            "type": "bias",
+            "layer": 0,
+            "activation": "constant",
+            "bias": 1.0,
+        }
+    )
     input_layer_nodes.append(bias_id)
 
-    layers.append({
-        "index": 0,
-        "type": "input",
-        "nodes": input_layer_nodes,
-    })
+    layers.append(
+        {
+            "index": 0,
+            "type": "input",
+            "nodes": input_layer_nodes,
+        }
+    )
 
     # Hidden units (cascade)
     previous_node_ids = list(input_layer_nodes)
     for h in range(hidden_units):
         hidden_id = f"hidden_{h}"
         layer_index = h + 1
-        nodes.append({
-            "id": hidden_id,
-            "type": "hidden",
-            "layer": layer_index,
-            "activation": "sigmoid",
-            "bias": round(-0.5 + h * 0.1, 4),
-        })
-        layers.append({
-            "index": layer_index,
-            "type": "hidden",
-            "nodes": [hidden_id],
-        })
+        nodes.append(
+            {
+                "id": hidden_id,
+                "type": "hidden",
+                "layer": layer_index,
+                "activation": "sigmoid",
+                "bias": round(-0.5 + h * 0.1, 4),
+            }
+        )
+        layers.append(
+            {
+                "index": layer_index,
+                "type": "hidden",
+                "nodes": [hidden_id],
+            }
+        )
 
         # Each hidden unit connects from ALL previous nodes (cascade property)
         for src_id in previous_node_ids:
-            connections.append({
-                "from": src_id,
-                "to": hidden_id,
-                "weight": round(0.1 * (h + 1) * (0.5 - (hash(src_id + hidden_id) % 100) / 100.0), 6),
-                "frozen": True,
-            })
+            connections.append(
+                {
+                    "from": src_id,
+                    "to": hidden_id,
+                    "weight": round(0.1 * (h + 1) * (0.5 - (hash(src_id + hidden_id) % 100) / 100.0), 6),
+                    "frozen": True,
+                }
+            )
 
         previous_node_ids.append(hidden_id)
 
@@ -202,29 +215,35 @@ def build_cascor_topology(
     output_layer_nodes = []
     for o in range(output_size):
         output_id = f"output_{o}"
-        nodes.append({
-            "id": output_id,
-            "type": "output",
-            "layer": output_layer_index,
-            "activation": "sigmoid",
-            "bias": round(0.01 * o, 4),
-        })
+        nodes.append(
+            {
+                "id": output_id,
+                "type": "output",
+                "layer": output_layer_index,
+                "activation": "sigmoid",
+                "bias": round(0.01 * o, 4),
+            }
+        )
         output_layer_nodes.append(output_id)
 
         # Output connects from all previous nodes
         for src_id in previous_node_ids:
-            connections.append({
-                "from": src_id,
-                "to": output_id,
-                "weight": round(0.05 * (hash(src_id + output_id) % 100 - 50) / 50.0, 6),
-                "frozen": False,
-            })
+            connections.append(
+                {
+                    "from": src_id,
+                    "to": output_id,
+                    "weight": round(0.05 * (hash(src_id + output_id) % 100 - 50) / 50.0, 6),
+                    "frozen": False,
+                }
+            )
 
-    layers.append({
-        "index": output_layer_index,
-        "type": "output",
-        "nodes": output_layer_nodes,
-    })
+    layers.append(
+        {
+            "index": output_layer_index,
+            "type": "output",
+            "nodes": output_layer_nodes,
+        }
+    )
 
     return {
         "layers": layers,
@@ -239,6 +258,7 @@ def build_cascor_topology(
 
 
 # ─── Network Configuration Templates ────────────────────────────────────────
+
 
 def build_network_config(
     input_size: int = 2,
@@ -447,30 +467,34 @@ def generate_weight_statistics(hidden_units: int = 0) -> Dict[str, Any]:
     # Input-to-output weights
     base_params = 3  # 2 inputs + bias -> 1 output
     total_params += base_params
-    stats["layers"].append({
-        "name": "output_weights",
-        "parameters": base_params,
-        "mean": 0.012,
-        "std": 0.45,
-        "min": -0.89,
-        "max": 0.91,
-        "l2_norm": round(0.45 * math.sqrt(base_params), 4),
-    })
+    stats["layers"].append(
+        {
+            "name": "output_weights",
+            "parameters": base_params,
+            "mean": 0.012,
+            "std": 0.45,
+            "min": -0.89,
+            "max": 0.91,
+            "l2_norm": round(0.45 * math.sqrt(base_params), 4),
+        }
+    )
 
     for h in range(hidden_units):
         # Each hidden unit receives from all prior nodes
         n_inputs = 3 + h  # 2 inputs + bias + previous hidden units
         total_params += n_inputs
         std_val = round(0.3 + 0.05 * h, 4)
-        stats["layers"].append({
-            "name": f"hidden_{h}_weights",
-            "parameters": n_inputs,
-            "mean": round(0.01 * (h + 1), 4),
-            "std": std_val,
-            "min": round(-2.0 * std_val, 4),
-            "max": round(2.0 * std_val, 4),
-            "l2_norm": round(std_val * math.sqrt(n_inputs), 4),
-        })
+        stats["layers"].append(
+            {
+                "name": f"hidden_{h}_weights",
+                "parameters": n_inputs,
+                "mean": round(0.01 * (h + 1), 4),
+                "std": std_val,
+                "min": round(-2.0 * std_val, 4),
+                "max": round(2.0 * std_val, 4),
+                "l2_norm": round(std_val * math.sqrt(n_inputs), 4),
+            }
+        )
 
     stats["total_parameters"] = total_params
     return stats

@@ -7,10 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from juniper_cascor_client import CascorControlStream, CascorTrainingStream
-from juniper_cascor_client.exceptions import (
-    JuniperCascorClientError,
-    JuniperCascorConnectionError,
-)
+from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConnectionError
 
 
 class TestCascorTrainingStream:

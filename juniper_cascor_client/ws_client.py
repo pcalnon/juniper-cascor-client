@@ -11,10 +11,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 import websockets
 from websockets.asyncio.client import ClientConnection
 
-from juniper_cascor_client.exceptions import (
-    JuniperCascorClientError,
-    JuniperCascorConnectionError,
-)
+from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConnectionError
 
 
 class CascorTrainingStream:

@@ -12,15 +12,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from juniper_cascor_client.exceptions import (
-    JuniperCascorClientError,
-    JuniperCascorConflictError,
-    JuniperCascorConnectionError,
-    JuniperCascorNotFoundError,
-    JuniperCascorServiceUnavailableError,
-    JuniperCascorTimeoutError,
-    JuniperCascorValidationError,
-)
+from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorTimeoutError, JuniperCascorValidationError
 
 
 class JuniperCascorClient:

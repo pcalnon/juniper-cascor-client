@@ -64,7 +64,7 @@ Part of the Juniper ecosystem. See the parent directory's `CLAUDE.md` at `/home/
 
 ### Position in Dependency Graph
 
-```
+```text
 juniper-ml[clients] --> juniper-cascor-client --> JuniperCascor (service)
 JuniperCanopy --> juniper-cascor-client --> JuniperCascor (service)
 ```
@@ -80,6 +80,7 @@ JuniperCanopy --> juniper-cascor-client --> JuniperCascor (service)
 Git worktrees allow multiple branches of a repository to be checked out simultaneously in separate directories. For the Juniper ecosystem, all worktrees are centralized in **`/home/pcalnon/Development/python/Juniper/worktrees/`** using a standardized naming convention.
 
 The full setup and cleanup procedures are defined in:
+
 - **`notes/WORKTREE_SETUP_PROCEDURE.md`** — Creating a worktree for a new task
 - **`notes/WORKTREE_CLEANUP_PROCEDURE.md`** — Merging, removing, and pushing after task completion
 
@@ -107,6 +108,7 @@ Example: `juniper-cascor-client--feature--add-retry--20260225-1430--410161a1`
 ### Quick Reference
 
 **Setup** (full procedure in `notes/WORKTREE_SETUP_PROCEDURE.md`):
+
 ```bash
 cd /home/pcalnon/Development/python/Juniper/juniper-cascor-client
 git fetch origin && git checkout main && git pull origin main
@@ -120,6 +122,7 @@ cd "$WORKTREE_DIR"
 ```
 
 **Cleanup** (full procedure in `notes/WORKTREE_CLEANUP_PROCEDURE.md`):
+
 ```bash
 cd "$WORKTREE_DIR" && git push origin "$BRANCH_NAME"
 cd /home/pcalnon/Development/python/Juniper/juniper-cascor-client
@@ -167,6 +170,7 @@ The full handoff protocol is defined in **`notes/THREAD_HANDOFF_PROCEDURE.md`**.
 | **User request** | User says "hand off", "new thread", or similar |
 
 **Do NOT handoff** when:
+
 - The task is nearly complete (< 2 remaining steps)
 - The current thread is still sharp and producing correct output
 - The work is tightly coupled and splitting would lose critical in-flight state

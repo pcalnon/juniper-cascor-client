@@ -5,15 +5,7 @@ JuniperCascor cascade correlation neural network training service.
 """
 
 from juniper_cascor_client.client import JuniperCascorClient
-from juniper_cascor_client.exceptions import (
-    JuniperCascorClientError,
-    JuniperCascorConflictError,
-    JuniperCascorConnectionError,
-    JuniperCascorNotFoundError,
-    JuniperCascorServiceUnavailableError,
-    JuniperCascorTimeoutError,
-    JuniperCascorValidationError,
-)
+from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorTimeoutError, JuniperCascorValidationError
 from juniper_cascor_client.ws_client import CascorControlStream, CascorTrainingStream
 
 __version__ = "0.1.0"

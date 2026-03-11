@@ -17,16 +17,8 @@ import threading
 
 import pytest
 
-from juniper_cascor_client.exceptions import (
-    JuniperCascorClientError,
-    JuniperCascorConflictError,
-    JuniperCascorConnectionError,
-    JuniperCascorNotFoundError,
-    JuniperCascorServiceUnavailableError,
-    JuniperCascorValidationError,
-)
+from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorValidationError
 from juniper_cascor_client.testing import FakeCascorClient
-
 
 # ─── Health & Readiness Tests ───────────────────────────────────────────────
 
@@ -541,10 +533,7 @@ class TestScenarios:
             ):
                 errors_caught += 1
 
-        assert errors_caught > 0, (
-            "Expected at least one error in 200 calls with the error_prone scenario, "
-            f"but caught {errors_caught}"
-        )
+        assert errors_caught > 0, "Expected at least one error in 200 calls with the error_prone scenario, " f"but caught {errors_caught}"
 
     @pytest.mark.unit
     def test_error_prone_scenario_network_is_loaded(self, fake_error):
@@ -832,9 +821,7 @@ class TestMiscellaneous:
             history = client.get_metrics_history()["data"]["history"]
             first_loss = history[0]["train_loss"]
             last_loss = history[-1]["train_loss"]
-            assert last_loss < first_loss, (
-                f"Expected loss to decrease: first={first_loss}, last={last_loss}"
-            )
+            assert last_loss < first_loss, f"Expected loss to decrease: first={first_loss}, last={last_loss}"
 
     @pytest.mark.unit
     def test_wait_for_ready_raises_when_closed(self):

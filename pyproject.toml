@@ -94,7 +94,7 @@ timeout = 30
 
 [tool.coverage.run]
 source = ["juniper_cascor_client"]
-source_pkgs = ["juniper_data_client"]
+source_pkgs = ["juniper_cascor_client"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
@@ -119,4 +119,3 @@ exclude_lines = [
 ]
 show_missing = true
 precision = 2
-

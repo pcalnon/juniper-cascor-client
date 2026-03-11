@@ -4,15 +4,7 @@ import pytest
 import responses
 from responses import matchers
 
-from juniper_cascor_client import (
-    JuniperCascorClient,
-    JuniperCascorConflictError,
-    JuniperCascorConnectionError,
-    JuniperCascorNotFoundError,
-    JuniperCascorServiceUnavailableError,
-    JuniperCascorValidationError,
-)
-
+from juniper_cascor_client import JuniperCascorClient, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorValidationError
 
 BASE_URL = "http://localhost:8200"
 API_URL = f"{BASE_URL}/v1"

@@ -17,23 +17,8 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from juniper_cascor_client.exceptions import (
-    JuniperCascorClientError,
-    JuniperCascorConflictError,
-    JuniperCascorConnectionError,
-    JuniperCascorNotFoundError,
-    JuniperCascorServiceUnavailableError,
-    JuniperCascorValidationError,
-)
-from juniper_cascor_client.testing.scenarios import (
-    SCENARIO_DEFAULTS,
-    build_cascor_topology,
-    build_network_config,
-    generate_decision_boundary,
-    generate_metrics_snapshot,
-    generate_weight_statistics,
-    get_scenario_data,
-)
+from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorValidationError
+from juniper_cascor_client.testing.scenarios import SCENARIO_DEFAULTS, build_cascor_topology, build_network_config, generate_decision_boundary, generate_metrics_snapshot, generate_weight_statistics, get_scenario_data
 
 # Valid training states and allowed transitions
 VALID_STATES = {"idle", "training", "paused", "complete"}
@@ -89,15 +74,9 @@ class FakeCascorClient:
         self._scenario = scenario
         self._state: str = scenario_data["initial_state"]
         self._epoch: int = scenario_data["initial_epoch"]
-        self._network_config: Optional[Dict[str, Any]] = (
-            copy.deepcopy(scenario_data["network_config"]) if scenario_data["network_config"] else None
-        )
-        self._dataset: Optional[Dict[str, Any]] = (
-            copy.deepcopy(scenario_data["dataset"]) if scenario_data["dataset"] else None
-        )
-        self._topology: Optional[Dict[str, Any]] = (
-            copy.deepcopy(scenario_data["topology"]) if scenario_data["topology"] else None
-        )
+        self._network_config: Optional[Dict[str, Any]] = copy.deepcopy(scenario_data["network_config"]) if scenario_data["network_config"] else None
+        self._dataset: Optional[Dict[str, Any]] = copy.deepcopy(scenario_data["dataset"]) if scenario_data["dataset"] else None
+        self._topology: Optional[Dict[str, Any]] = copy.deepcopy(scenario_data["topology"]) if scenario_data["topology"] else None
         self._metrics_history: List[Dict[str, Any]] = []
         self._training_params: Optional[Dict[str, Any]] = None
         self._training_start_time: Optional[float] = None
@@ -677,9 +656,7 @@ class FakeCascorClient:
         """
         with self._lock:
             if self._state not in ("training", "paused"):
-                raise JuniperCascorConflictError(
-                    f"Cannot advance epoch in state '{self._state}'. Must be 'training' or 'paused'."
-                )
+                raise JuniperCascorConflictError(f"Cannot advance epoch in state '{self._state}'. Must be 'training' or 'paused'.")
 
             max_epochs = 1000
             if self._training_params:
