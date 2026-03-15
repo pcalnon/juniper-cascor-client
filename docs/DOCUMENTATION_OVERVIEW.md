@@ -43,11 +43,6 @@
 | **DOCUMENTATION_OVERVIEW.md** | ~120 | Overview | This file -- navigation index |
 | **QUICK_START.md** | ~140 | Tutorial | Install, configure, and use in 5 minutes |
 | **REFERENCE.md** | ~330 | Reference | Complete REST, WebSocket, exception, and testing reference |
-
-### notes/ Directory
-
-| File | Lines | Type | Purpose |
-|------|-------|------|---------|
 | **DEVELOPER_CHEATSHEET.md** | ~100 | Cheatsheet | Quick-reference card for common development tasks |
 
 ### Root Directory
@@ -105,3 +100,5 @@ juniper-ml ──meta-package──> juniper-cascor-client
 **Last Updated:** March 3, 2026
 **Version:** 0.1.0
 **Maintainer:** Paul Calnon
+
+> See the [Juniper Ecosystem Guide](../../CLAUDE.md) for the full project map and dependency graph.
