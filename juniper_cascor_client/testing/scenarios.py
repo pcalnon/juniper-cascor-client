@@ -399,48 +399,51 @@ def generate_decision_boundary(
     Creates a resolution x resolution grid over [-1.5, 1.5] with
     synthetic predictions based on a simple distance-based model.
 
+    The response format matches the real juniper-cascor API
+    (``/v1/decision-boundary``): 2D meshgrid arrays for ``grid_x``
+    and ``grid_y``, and a 2D array of integer class predictions.
+
     Args:
         input_size: Number of input dimensions (must be 2 for visualization).
         resolution: Grid resolution per axis.
         hidden_units: Number of hidden units (affects decision boundary complexity).
 
     Returns:
-        Dictionary with x_grid, y_grid, predictions, and resolution fields.
+        Dictionary with grid_x, grid_y (2D meshgrids), predictions (2D
+        integer class indices), resolution, x_range, and y_range fields.
     """
     x_min, x_max = -1.5, 1.5
     y_min, y_max = -1.5, 1.5
-    x_step = (x_max - x_min) / (resolution - 1)
-    y_step = (y_max - y_min) / (resolution - 1)
 
-    x_grid: List[float] = []
-    y_grid: List[float] = []
-    predictions: List[float] = []
+    # Build 1D axis arrays
+    xx = [round(x_min + i * (x_max - x_min) / (resolution - 1), 6) for i in range(resolution)]
+    yy = [round(y_min + j * (y_max - y_min) / (resolution - 1), 6) for j in range(resolution)]
 
-    for i in range(resolution):
-        x = x_min + i * x_step
-        x_grid.append(round(x, 6))
-
+    # Build 2D meshgrid arrays (matching np.meshgrid(xx, yy) output)
+    grid_x: List[List[float]] = []
+    grid_y: List[List[float]] = []
     for j in range(resolution):
-        y = y_min + j * y_step
-        y_grid.append(round(y, 6))
+        grid_x.append(list(xx))  # each row is a copy of xx
+        grid_y.append([yy[j]] * resolution)  # each row is constant y
 
-    # Generate predictions based on a synthetic nonlinear boundary
-    # More hidden units -> more complex boundary
+    # Generate 2D predictions as integer class indices (matching argmax output)
     complexity = max(1, hidden_units)
+    predictions: List[List[int]] = []
     for j in range(resolution):
-        y = y_min + j * y_step
+        row: List[int] = []
         for i in range(resolution):
-            x = x_min + i * x_step
-            # Spiral-inspired decision: angle + radius modulation
+            x = xx[i]
+            y = yy[j]
             angle = math.atan2(y, x)
             radius = math.sqrt(x * x + y * y)
             boundary = math.sin(angle * complexity + radius * 2.0)
-            prediction = 1.0 / (1.0 + math.exp(-5.0 * boundary))
-            predictions.append(round(prediction, 6))
+            # Threshold at 0 to produce integer class index (0 or 1)
+            row.append(1 if boundary > 0 else 0)
+        predictions.append(row)
 
     return {
-        "x_grid": x_grid,
-        "y_grid": y_grid,
+        "grid_x": grid_x,
+        "grid_y": grid_y,
         "predictions": predictions,
         "resolution": resolution,
         "x_range": [x_min, x_max],

@@ -437,14 +437,23 @@ class TestData:
 
     @pytest.mark.unit
     def test_get_decision_boundary(self, fake_training):
-        """get_decision_boundary returns grid data with correct dimensions."""
+        """get_decision_boundary returns 2D grid data matching real API format."""
         result = fake_training.get_decision_boundary(resolution=10)
-        assert result["status"] == "ok"
+        assert result["status"] == "success"
         data = result["data"]
         assert data["resolution"] == 10
-        assert len(data["x_grid"]) == 10
-        assert len(data["y_grid"]) == 10
-        assert len(data["predictions"]) == 100  # 10 * 10
+        # grid_x and grid_y are 2D meshgrid arrays (10x10)
+        assert len(data["grid_x"]) == 10
+        assert len(data["grid_x"][0]) == 10
+        assert len(data["grid_y"]) == 10
+        assert len(data["grid_y"][0]) == 10
+        # predictions is a 2D array of integer class indices (10x10)
+        assert len(data["predictions"]) == 10
+        assert len(data["predictions"][0]) == 10
+        # All prediction values are integers (0 or 1)
+        for row in data["predictions"]:
+            for val in row:
+                assert val in (0, 1)
 
     @pytest.mark.unit
     def test_get_decision_boundary_default_resolution(self, fake_training):

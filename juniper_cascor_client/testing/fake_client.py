@@ -622,7 +622,7 @@ class FakeCascorClient:
             )
 
             return {
-                "status": "ok",
+                "status": "success",
                 "data": boundary,
             }
 
