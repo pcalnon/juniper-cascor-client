@@ -334,7 +334,7 @@ jobs:
           bandit -r juniper_cascor_client -f sarif -o reports/security/bandit.sarif || true
 
       - name: Upload Bandit SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169  # v3.28.0
+        uses: github/codeql-action/upload-sarif@b1bff81932f5cdfc8695c7752dcee935dcd061c8  # v4.33.0
         if: always()
         with:
           sarif_file: reports/security/bandit.sarif
