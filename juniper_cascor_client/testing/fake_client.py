@@ -7,7 +7,7 @@ Project: Juniper
 Sub-Project: juniper-cascor-client
 Application: FakeCascorClient
 Author: Paul Calnon
-Version: 0.1.0
+Version: 0.2.0
 License: MIT License
 """
 
@@ -135,7 +135,7 @@ class FakeCascorClient:
                 "status": "ok",
                 "data": {
                     "service": "juniper-cascor",
-                    "version": "0.1.0",
+                    "version": "0.2.0",
                     "uptime_seconds": 3600.0,
                     "network_loaded": self._network_loaded,
                     "training_state": self._state,
@@ -516,6 +516,37 @@ class FakeCascorClient:
                     "params": copy.deepcopy(self._training_params.get("params", {})),
                     "dataset": copy.deepcopy(self._training_params.get("dataset")),
                 },
+            }
+
+    def update_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Update runtime-modifiable training parameters.
+
+        Args:
+            params: Dict of parameter names and new values.
+
+        Raises:
+            JuniperCascorNotFoundError: If no network is loaded.
+        """
+        with self._lock:
+            self._check_closed()
+            self._maybe_raise_error("update_params")
+
+            if not self._network_loaded:
+                raise JuniperCascorNotFoundError("No network loaded.")
+
+            # Update the network config with the provided params
+            updatable_keys = {
+                "learning_rate", "candidate_learning_rate", "correlation_threshold",
+                "candidate_pool_size", "max_hidden_units", "epochs_max", "patience",
+            }
+            if self._network_config is not None:
+                for key, value in params.items():
+                    if key in updatable_keys:
+                        self._network_config[key] = value
+
+            return {
+                "status": "ok",
+                "data": copy.deepcopy(self._network_config) if self._network_config else {},
             }
 
     # ─── Metrics ─────────────────────────────────────────────────────────

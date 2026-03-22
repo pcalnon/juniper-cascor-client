@@ -46,7 +46,7 @@ class JuniperCascorClient:
             total=retries,
             backoff_factor=0.5,
             status_forcelist=[502, 504],
-            allowed_methods=["GET", "POST", "DELETE", "PUT"],
+            allowed_methods=["GET", "POST", "DELETE", "PUT", "PATCH"],
         )
         adapter = HTTPAdapter(max_retries=retry_strategy, pool_maxsize=10)
         self.session.mount("http://", adapter)
@@ -177,6 +177,22 @@ class JuniperCascorClient:
         """Get current training parameters."""
         return self._get("/training/params")
 
+    def update_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Update runtime-modifiable training parameters.
+
+        Updates parameters on the running network without requiring a restart.
+        Parameters that are safe to update at runtime:
+        - learning_rate, candidate_learning_rate, correlation_threshold,
+          candidate_pool_size, max_hidden_units, epochs_max, patience.
+
+        Args:
+            params: Dict of parameter names and new values (only non-None values).
+
+        Returns:
+            Updated training parameters dict.
+        """
+        return self._patch("/training/params", json=params)
+
     # ─── Metrics ─────────────────────────────────────────────────────────
 
     def get_metrics(self) -> Dict[str, Any]:
@@ -230,6 +246,9 @@ class JuniperCascorClient:
 
     def _delete(self, path: str) -> Dict[str, Any]:
         return self._request("DELETE", path)
+
+    def _patch(self, path: str, json: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return self._request("PATCH", path, json=json)
 
     def _request(
         self,
