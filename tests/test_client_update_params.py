@@ -5,7 +5,6 @@ import responses as responses_lib
 
 from juniper_cascor_client import JuniperCascorClient
 
-
 BASE_URL = "http://localhost:8200"
 
 
@@ -43,6 +42,7 @@ class TestUpdateParams:
     @responses_lib.activate
     def test_update_params_sends_json_body(self, client):
         import json
+
         responses_lib.add(
             responses_lib.PATCH,
             f"{BASE_URL}/v1/training/params",
@@ -57,6 +57,7 @@ class TestUpdateParams:
     @responses_lib.activate
     def test_update_params_handles_404(self, client):
         from juniper_cascor_client.exceptions import JuniperCascorNotFoundError
+
         responses_lib.add(
             responses_lib.PATCH,
             f"{BASE_URL}/v1/training/params",

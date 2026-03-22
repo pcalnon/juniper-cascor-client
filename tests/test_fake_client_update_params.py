@@ -27,11 +27,13 @@ class TestFakeClientUpdateParams:
 
     def test_update_params_multiple_params(self):
         with FakeCascorClient(scenario="two_spiral_training") as client:
-            result = client.update_params({
-                "learning_rate": 0.002,
-                "correlation_threshold": 0.15,
-                "candidate_pool_size": 12,
-            })
+            result = client.update_params(
+                {
+                    "learning_rate": 0.002,
+                    "correlation_threshold": 0.15,
+                    "candidate_pool_size": 12,
+                }
+            )
             assert result["status"] == "ok"
             assert result["data"]["learning_rate"] == 0.002
             assert result["data"]["correlation_threshold"] == 0.15

@@ -536,8 +536,13 @@ class FakeCascorClient:
 
             # Update the network config with the provided params
             updatable_keys = {
-                "learning_rate", "candidate_learning_rate", "correlation_threshold",
-                "candidate_pool_size", "max_hidden_units", "epochs_max", "patience",
+                "learning_rate",
+                "candidate_learning_rate",
+                "correlation_threshold",
+                "candidate_pool_size",
+                "max_hidden_units",
+                "epochs_max",
+                "patience",
             }
             if self._network_config is not None:
                 for key, value in params.items():
