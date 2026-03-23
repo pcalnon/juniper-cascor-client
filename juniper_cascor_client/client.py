@@ -73,7 +73,7 @@ class JuniperCascorClient:
         """Check if service is ready to accept requests."""
         try:
             result = self._get("/health/ready")
-            return result.get("data", {}).get("network_loaded", False)
+            return result.get("details", {}).get("network_loaded", False)
         except JuniperCascorClientError:
             return False
 

@@ -83,13 +83,33 @@ class TestHealthEndpoints:
 
     @responses.activate
     def test_is_ready_true(self):
-        responses.add(responses.GET, f"{API_URL}/health/ready", json=_envelope({"network_loaded": True}))
+        """is_ready() returns True when server reports network_loaded in flat ReadinessResponse."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/health/ready",
+            json={
+                "status": "ready",
+                "version": "0.4.0",
+                "service": "juniper-cascor",
+                "details": {"network_loaded": True, "training_state": "Started"},
+            },
+        )
         with JuniperCascorClient(BASE_URL) as client:
             assert client.is_ready() is True
 
     @responses.activate
     def test_is_ready_false(self):
-        responses.add(responses.GET, f"{API_URL}/health/ready", json=_envelope({"network_loaded": False}))
+        """is_ready() returns False when server reports network_loaded=False in flat ReadinessResponse."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/health/ready",
+            json={
+                "status": "ready",
+                "version": "0.4.0",
+                "service": "juniper-cascor",
+                "details": {"network_loaded": False, "training_state": "unknown"},
+            },
+        )
         with JuniperCascorClient(BASE_URL) as client:
             assert client.is_ready() is False
 
