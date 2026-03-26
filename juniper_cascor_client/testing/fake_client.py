@@ -96,6 +96,17 @@ class FakeCascorClient:
             }
             self._training_start_time = time.time() - (self._epoch * 0.5)
 
+    # ─── Response Envelope ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _success_envelope(data: Any) -> Dict[str, Any]:
+        """Wrap data in a ResponseEnvelope matching the real cascor server format."""
+        return {
+            "status": "success",
+            "data": data,
+            "meta": {"timestamp": time.time(), "version": "0.4.0"},
+        }
+
     # ─── Error Injection ─────────────────────────────────────────────────
 
     def _maybe_raise_error(self, method_name: str) -> None:
@@ -131,16 +142,13 @@ class FakeCascorClient:
         with self._lock:
             self._check_closed()
             self._maybe_raise_error("health_check")
-            return {
-                "status": "ok",
-                "data": {
-                    "service": "juniper-cascor",
-                    "version": "0.2.0",
-                    "uptime_seconds": 3600.0,
-                    "network_loaded": self._network_loaded,
-                    "training_state": self._state,
-                },
-            }
+            return self._success_envelope({
+                "service": "juniper-cascor",
+                "version": "0.4.0",
+                "uptime_seconds": 3600.0,
+                "network_loaded": self._network_loaded,
+                "training_state": self._state,
+            })
 
     def is_alive(self) -> bool:
         """Check if service is alive (liveness probe)."""
@@ -223,13 +231,10 @@ class FakeCascorClient:
             self._epoch = 0
             self._metrics_history = []
 
-            return {
-                "status": "ok",
+            return self._success_envelope({
+                "config": copy.deepcopy(self._network_config),
                 "message": "Network created successfully.",
-                "data": {
-                    "config": copy.deepcopy(self._network_config),
-                },
-            }
+            })
 
     def get_network(self) -> Dict[str, Any]:
         """Get current network state and configuration."""
@@ -240,15 +245,12 @@ class FakeCascorClient:
             if not self._network_loaded:
                 raise JuniperCascorNotFoundError("No network loaded.")
 
-            return {
-                "status": "ok",
-                "data": {
-                    "config": copy.deepcopy(self._network_config),
-                    "state": self._state,
-                    "epoch": self._epoch,
-                    "network_loaded": True,
-                },
-            }
+            return self._success_envelope({
+                "config": copy.deepcopy(self._network_config),
+                "state": self._state,
+                "epoch": self._epoch,
+                "network_loaded": True,
+            })
 
     def delete_network(self) -> Dict[str, Any]:
         """Destroy the current network."""
@@ -272,10 +274,7 @@ class FakeCascorClient:
             self._training_params = None
             self._training_start_time = None
 
-            return {
-                "status": "ok",
-                "message": "Network deleted.",
-            }
+            return self._success_envelope({"message": "Network deleted."})
 
     def get_topology(self) -> Dict[str, Any]:
         """Get network topology for visualization."""
@@ -286,10 +285,7 @@ class FakeCascorClient:
             if not self._network_loaded or self._topology is None:
                 raise JuniperCascorNotFoundError("No network loaded.")
 
-            return {
-                "status": "ok",
-                "data": copy.deepcopy(self._topology),
-            }
+            return self._success_envelope(copy.deepcopy(self._topology))
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get network weight statistics."""
@@ -303,10 +299,7 @@ class FakeCascorClient:
             hidden_units = self._topology.get("hidden_units", 0) if self._topology else 0
             stats = generate_weight_statistics(hidden_units)
 
-            return {
-                "status": "ok",
-                "data": stats,
-            }
+            return self._success_envelope(stats)
 
     # ─── Training Control ────────────────────────────────────────────────
 
@@ -365,14 +358,11 @@ class FakeCascorClient:
             self._metrics_history = []
             self._training_start_time = time.time()
 
-            return {
-                "status": "ok",
+            return self._success_envelope({
+                "state": "training",
+                "epochs": self._training_params["epochs"],
                 "message": "Training started.",
-                "data": {
-                    "state": "training",
-                    "epochs": self._training_params["epochs"],
-                },
-            }
+            })
 
     def stop_training(self) -> Dict[str, Any]:
         """Request graceful training stop."""
@@ -385,14 +375,11 @@ class FakeCascorClient:
 
             self._state = "idle"
 
-            return {
-                "status": "ok",
+            return self._success_envelope({
+                "state": "idle",
+                "final_epoch": self._epoch,
                 "message": "Training stopped.",
-                "data": {
-                    "state": "idle",
-                    "final_epoch": self._epoch,
-                },
-            }
+            })
 
     def pause_training(self) -> Dict[str, Any]:
         """Pause training after current epoch."""
@@ -405,14 +392,11 @@ class FakeCascorClient:
 
             self._state = "paused"
 
-            return {
-                "status": "ok",
+            return self._success_envelope({
+                "state": "paused",
+                "epoch": self._epoch,
                 "message": "Training paused.",
-                "data": {
-                    "state": "paused",
-                    "epoch": self._epoch,
-                },
-            }
+            })
 
     def resume_training(self) -> Dict[str, Any]:
         """Resume paused training."""
@@ -425,14 +409,11 @@ class FakeCascorClient:
 
             self._state = "training"
 
-            return {
-                "status": "ok",
+            return self._success_envelope({
+                "state": "training",
+                "epoch": self._epoch,
                 "message": "Training resumed.",
-                "data": {
-                    "state": "training",
-                    "epoch": self._epoch,
-                },
-            }
+            })
 
     def reset_training(self) -> Dict[str, Any]:
         """Reset network and training state."""
@@ -457,16 +438,33 @@ class FakeCascorClient:
             self._training_params = None
             self._training_start_time = None
 
-            return {
-                "status": "ok",
+            return self._success_envelope({
+                "state": "idle",
                 "message": "Training reset.",
-                "data": {
-                    "state": "idle",
-                },
-            }
+            })
+
+    # FSM state mapping: internal state -> cascor state_machine.status
+    _STATE_TO_FSM = {
+        "idle": "STOPPED",
+        "training": "STARTED",
+        "paused": "PAUSED",
+        "complete": "COMPLETED",
+    }
+
+    # Phase mapping: internal state -> cascor state_machine.phase
+    _STATE_TO_PHASE = {
+        "idle": "IDLE",
+        "training": "OUTPUT",
+        "paused": "OUTPUT",
+        "complete": "IDLE",
+    }
 
     def get_training_status(self) -> Dict[str, Any]:
-        """Get current training status."""
+        """Get current training status.
+
+        Returns ResponseEnvelope matching the real cascor server format:
+        nested state_machine, monitor, and training_state dicts.
+        """
         with self._lock:
             self._check_closed()
             self._maybe_raise_error("get_training_status")
@@ -479,44 +477,51 @@ class FakeCascorClient:
             if self._training_params:
                 max_epochs = self._training_params.get("epochs", 1000)
 
-            progress = round(self._epoch / max_epochs, 4) if max_epochs > 0 else 0.0
+            hidden_units = 0
+            if self._topology:
+                hu = self._topology.get("hidden_units", 0)
+                hidden_units = len(hu) if isinstance(hu, list) else hu
 
-            return {
-                "status": "ok",
-                "is_training": self._state == "training",
-                "data": {
-                    "state": self._state,
-                    "epoch": self._epoch,
-                    "max_epochs": max_epochs,
-                    "progress": min(progress, 1.0),
-                    "elapsed_seconds": elapsed,
-                    "network_loaded": self._network_loaded,
+            return self._success_envelope({
+                "training_active": self._state == "training",
+                "network_loaded": self._network_loaded,
+                "state_machine": {
+                    "status": self._STATE_TO_FSM.get(self._state, "STOPPED"),
+                    "phase": self._STATE_TO_PHASE.get(self._state, "IDLE"),
+                    "current_state": self._STATE_TO_FSM.get(self._state, "STOPPED"),
                 },
-            }
+                "monitor": {
+                    "current_epoch": self._epoch,
+                    "current_hidden_units": hidden_units,
+                    "elapsed_seconds": elapsed,
+                },
+                "training_state": {
+                    "learning_rate": self._network_config.get("learning_rate", 0.01) if self._network_config else 0.01,
+                    "max_epochs": max_epochs,
+                    "max_hidden_units": self._network_config.get("max_hidden_units", 10) if self._network_config else 10,
+                    "input_size": self._network_config.get("input_size", 2) if self._network_config else 0,
+                    "output_size": self._network_config.get("output_size", 1) if self._network_config else 0,
+                    "phase": self._STATE_TO_PHASE.get(self._state, "IDLE"),
+                },
+            })
 
     def get_training_params(self) -> Dict[str, Any]:
-        """Get current training parameters."""
+        """Get current training parameters.
+
+        Returns ResponseEnvelope with flat param dict in data (matching real server).
+        """
         with self._lock:
             self._check_closed()
             self._maybe_raise_error("get_training_params")
 
             if self._training_params is None:
-                return {
-                    "status": "ok",
-                    "data": {
-                        "params": copy.deepcopy(self._network_config) if self._network_config else {},
-                        "epochs": self._network_config.get("epochs_max", 1000) if self._network_config else 0,
-                    },
-                }
+                params = copy.deepcopy(self._network_config) if self._network_config else {}
+            else:
+                params = copy.deepcopy(self._training_params.get("params", {}))
+                if not params and self._network_config:
+                    params = copy.deepcopy(self._network_config)
 
-            return {
-                "status": "ok",
-                "data": {
-                    "epochs": self._training_params.get("epochs", 1000),
-                    "params": copy.deepcopy(self._training_params.get("params", {})),
-                    "dataset": copy.deepcopy(self._training_params.get("dataset")),
-                },
-            }
+            return self._success_envelope(params)
 
     def update_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Update runtime-modifiable training parameters.
@@ -549,10 +554,7 @@ class FakeCascorClient:
                     if key in updatable_keys:
                         self._network_config[key] = value
 
-            return {
-                "status": "ok",
-                "data": copy.deepcopy(self._network_config) if self._network_config else {},
-            }
+            return self._success_envelope(copy.deepcopy(self._network_config) if self._network_config else {})
 
     # ─── Metrics ─────────────────────────────────────────────────────────
 
@@ -563,32 +565,29 @@ class FakeCascorClient:
             self._maybe_raise_error("get_metrics")
 
             if self._epoch == 0 and not self._metrics_history:
-                return {
-                    "status": "ok",
-                    "data": {
-                        "epoch": 0,
-                        "train_loss": None,
-                        "val_loss": None,
-                        "train_accuracy": None,
-                        "val_accuracy": None,
-                        "correlation": None,
-                        "hidden_units": 0,
-                        "phase": None,
-                    },
-                }
+                return self._success_envelope({
+                    "epoch": 0,
+                    "train_loss": None,
+                    "val_loss": None,
+                    "train_accuracy": None,
+                    "val_accuracy": None,
+                    "hidden_units": 0,
+                    "phase": None,
+                    "timestamp": time.time(),
+                })
 
             if self._metrics_history:
                 current = copy.deepcopy(self._metrics_history[-1])
             else:
                 current = generate_metrics_snapshot(self._epoch, self._scenario)
+            current["timestamp"] = time.time()
 
-            return {
-                "status": "ok",
-                "data": current,
-            }
+            return self._success_envelope(current)
 
     def get_metrics_history(self, count: Optional[int] = None) -> Dict[str, Any]:
         """Get training metrics history.
+
+        Returns ResponseEnvelope with data as a bare list (matching real server).
 
         Args:
             count: Number of recent entries to return. If None, returns all.
@@ -601,14 +600,7 @@ class FakeCascorClient:
             if count is not None and count > 0:
                 history = history[-count:]
 
-            return {
-                "status": "ok",
-                "data": {
-                    "history": history,
-                    "total": len(self._metrics_history),
-                    "returned": len(history),
-                },
-            }
+            return self._success_envelope(history)
 
     # ─── Data ────────────────────────────────────────────────────────────
 
@@ -619,15 +611,9 @@ class FakeCascorClient:
             self._maybe_raise_error("get_dataset")
 
             if self._dataset is None:
-                return {
-                    "status": "ok",
-                    "data": {},
-                }
+                return self._success_envelope({})
 
-            return {
-                "status": "ok",
-                "data": copy.deepcopy(self._dataset),
-            }
+            return self._success_envelope(copy.deepcopy(self._dataset))
 
     def get_decision_boundary(self, resolution: int = 50) -> Dict[str, Any]:
         """Get decision boundary grid data for 2D visualization.

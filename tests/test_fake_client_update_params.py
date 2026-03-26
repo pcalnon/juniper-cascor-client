@@ -15,7 +15,7 @@ class TestFakeClientUpdateParams:
     def test_update_params_updates_network_config(self):
         with FakeCascorClient(scenario="two_spiral_training") as client:
             result = client.update_params({"learning_rate": 0.001})
-            assert result["status"] == "ok"
+            assert result["status"] == "success"
             # learning_rate should be updated in the returned config
             assert result["data"]["learning_rate"] == 0.001
 
@@ -23,7 +23,7 @@ class TestFakeClientUpdateParams:
         with FakeCascorClient(scenario="two_spiral_training") as client:
             # Should not raise even with unknown params
             result = client.update_params({"nn_spiral_stuff": "ignored"})
-            assert result["status"] == "ok"
+            assert result["status"] == "success"
 
     def test_update_params_multiple_params(self):
         with FakeCascorClient(scenario="two_spiral_training") as client:
@@ -34,7 +34,7 @@ class TestFakeClientUpdateParams:
                     "candidate_pool_size": 12,
                 }
             )
-            assert result["status"] == "ok"
+            assert result["status"] == "success"
             assert result["data"]["learning_rate"] == 0.002
             assert result["data"]["correlation_threshold"] == 0.15
             assert result["data"]["candidate_pool_size"] == 12
@@ -49,4 +49,4 @@ class TestFakeClientUpdateParams:
         with FakeCascorClient(scenario="two_spiral_training") as client:
             client.set_state("paused")
             result = client.update_params({"learning_rate": 0.003})
-            assert result["status"] == "ok"
+            assert result["status"] == "success"
