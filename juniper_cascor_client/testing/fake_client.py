@@ -96,6 +96,17 @@ class FakeCascorClient:
             }
             self._training_start_time = time.time() - (self._epoch * 0.5)
 
+    # ─── Response Envelope ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _success_envelope(data: Any) -> Dict[str, Any]:
+        """Wrap data in a ResponseEnvelope matching the real cascor server format."""
+        return {
+            "status": "success",
+            "data": data,
+            "meta": {"timestamp": time.time(), "version": "0.4.0"},
+        }
+
     # ─── Error Injection ─────────────────────────────────────────────────
 
     def _maybe_raise_error(self, method_name: str) -> None:
@@ -140,16 +151,13 @@ class FakeCascorClient:
         with self._lock:
             self._check_closed()
             self._maybe_raise_error("health_check")
-            return {
-                "status": "ok",
-                "data": {
-                    "service": "juniper-cascor",
-                    "version": "0.2.0",
-                    "uptime_seconds": 3600.0,
-                    "network_loaded": self._network_loaded,
-                    "training_state": self._state,
-                },
-            }
+            return self._success_envelope({
+                "service": "juniper-cascor",
+                "version": "0.4.0",
+                "uptime_seconds": 3600.0,
+                "network_loaded": self._network_loaded,
+                "training_state": self._state,
+            })
 
     def is_alive(self) -> bool:
         """Check if service is alive (liveness probe)."""
@@ -234,6 +242,7 @@ class FakeCascorClient:
 
             return self._success_envelope({
                 "config": copy.deepcopy(self._network_config),
+                "message": "Network created successfully.",
             })
 
     def get_network(self) -> Dict[str, Any]:
@@ -274,9 +283,7 @@ class FakeCascorClient:
             self._training_params = None
             self._training_start_time = None
 
-            return {
-                "status": "success",
-            }
+            return self._success_envelope({"message": "Network deleted."})
 
     def get_topology(self) -> Dict[str, Any]:
         """Get network topology for visualization."""
@@ -363,6 +370,7 @@ class FakeCascorClient:
             return self._success_envelope({
                 "state": "training",
                 "epochs": self._training_params["epochs"],
+                "message": "Training started.",
             })
 
     def stop_training(self) -> Dict[str, Any]:
@@ -379,6 +387,7 @@ class FakeCascorClient:
             return self._success_envelope({
                 "state": "idle",
                 "final_epoch": self._epoch,
+                "message": "Training stopped.",
             })
 
     def pause_training(self) -> Dict[str, Any]:
@@ -395,6 +404,7 @@ class FakeCascorClient:
             return self._success_envelope({
                 "state": "paused",
                 "epoch": self._epoch,
+                "message": "Training paused.",
             })
 
     def resume_training(self) -> Dict[str, Any]:
@@ -411,6 +421,7 @@ class FakeCascorClient:
             return self._success_envelope({
                 "state": "training",
                 "epoch": self._epoch,
+                "message": "Training resumed.",
             })
 
     def reset_training(self) -> Dict[str, Any]:
@@ -438,10 +449,31 @@ class FakeCascorClient:
 
             return self._success_envelope({
                 "state": "idle",
+                "message": "Training reset.",
             })
 
+    # FSM state mapping: internal state -> cascor state_machine.status
+    _STATE_TO_FSM = {
+        "idle": "STOPPED",
+        "training": "STARTED",
+        "paused": "PAUSED",
+        "complete": "COMPLETED",
+    }
+
+    # Phase mapping: internal state -> cascor state_machine.phase
+    _STATE_TO_PHASE = {
+        "idle": "IDLE",
+        "training": "OUTPUT",
+        "paused": "OUTPUT",
+        "complete": "IDLE",
+    }
+
     def get_training_status(self) -> Dict[str, Any]:
-        """Get current training status."""
+        """Get current training status.
+
+        Returns ResponseEnvelope matching the real cascor server format:
+        nested state_machine, monitor, and training_state dicts.
+        """
         with self._lock:
             self._check_closed()
             self._maybe_raise_error("get_training_status")
@@ -491,7 +523,10 @@ class FakeCascorClient:
             })
 
     def get_training_params(self) -> Dict[str, Any]:
-        """Get current training parameters."""
+        """Get current training parameters.
+
+        Returns ResponseEnvelope with flat param dict in data (matching real server).
+        """
         with self._lock:
             self._check_closed()
             self._maybe_raise_error("get_training_params")
@@ -566,6 +601,7 @@ class FakeCascorClient:
                 current = copy.deepcopy(self._metrics_history[-1])
             else:
                 current = generate_metrics_snapshot(self._epoch, self._scenario)
+            current["timestamp"] = time.time()
 
             current.pop("correlation", None)
             current.setdefault("timestamp", time.time())
@@ -574,6 +610,8 @@ class FakeCascorClient:
 
     def get_metrics_history(self, count: Optional[int] = None) -> Dict[str, Any]:
         """Get training metrics history.
+
+        Returns ResponseEnvelope with data as a bare list (matching real server).
 
         Args:
             count: Number of recent entries to return. If None, returns all.

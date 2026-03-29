@@ -30,7 +30,7 @@ class TestHealth:
     def test_health_check_returns_valid_dict(self, fake_training):
         """health_check returns a dict with 'status' and 'data' keys."""
         result = fake_training.health_check()
-        assert result["status"] == "ok", "Top-level status should be 'ok'"
+        assert result["status"] == "success", "Top-level status should be 'success'"
         assert "data" in result, "Response must contain 'data' key"
         data = result["data"]
         assert data["service"] == "juniper-cascor"
@@ -306,7 +306,7 @@ class TestTrainingControl:
 
     @pytest.mark.unit
     def test_get_training_status(self, fake_training):
-        """get_training_status returns state, epoch, progress, and timing."""
+        """get_training_status returns state_machine, monitor, training_state, and network_loaded."""
         result = fake_training.get_training_status()
         assert result["status"] == "success"
         data = result["data"]
@@ -326,7 +326,7 @@ class TestTrainingControl:
 
     @pytest.mark.unit
     def test_get_training_params(self, fake_training):
-        """get_training_params returns epochs, params, and dataset info."""
+        """get_training_params returns flat param dict with network config fields."""
         result = fake_training.get_training_params()
         assert result["status"] == "success"
         data = result["data"]
@@ -374,7 +374,7 @@ class TestMetrics:
 
     @pytest.mark.unit
     def test_get_metrics_history_returns_list(self, fake_training):
-        """get_metrics_history returns a list of metric snapshots."""
+        """get_metrics_history returns a bare list of metric snapshots."""
         fake_training.advance_epoch(10)
         result = fake_training.get_metrics_history()
         assert result["status"] == "success"
@@ -481,7 +481,7 @@ class TestScenarios:
 
     @pytest.mark.unit
     def test_idle_scenario_initial_state(self, fake_idle):
-        """Idle scenario: no network, state='idle', epoch=0."""
+        """Idle scenario: no network, state_machine.status='STOPPED', epoch=0."""
         status = fake_idle.get_training_status()
         assert status["data"]["state_machine"]["status"] == "IDLE"
         assert status["data"]["monitor"]["current_epoch"] == 0
@@ -489,7 +489,7 @@ class TestScenarios:
 
     @pytest.mark.unit
     def test_two_spiral_training_scenario(self, fake_training):
-        """Two-spiral scenario: network loaded, state='training', epoch=0."""
+        """Two-spiral scenario: network loaded, state_machine.status='STARTED', epoch=0."""
         status = fake_training.get_training_status()
         assert status["data"]["state_machine"]["status"] == "STARTED"
         assert status["data"]["monitor"]["current_epoch"] == 0
@@ -500,7 +500,7 @@ class TestScenarios:
 
     @pytest.mark.unit
     def test_xor_converged_scenario(self, fake_converged):
-        """XOR converged scenario: state='complete', epoch=150, 2 hidden units."""
+        """XOR converged scenario: state_machine.status='COMPLETED', epoch=150, 2 hidden units."""
         status = fake_converged.get_training_status()
         assert status["data"]["state_machine"]["status"] == "COMPLETED"
         assert status["data"]["monitor"]["current_epoch"] == 150
@@ -513,7 +513,7 @@ class TestScenarios:
 
     @pytest.mark.unit
     def test_empty_scenario(self, fake_empty):
-        """Empty scenario: no network, no dataset, state='idle'."""
+        """Empty scenario: no network, no dataset, state_machine.status='STOPPED'."""
         status = fake_empty.get_training_status()
         assert status["data"]["state_machine"]["status"] == "IDLE"
         assert status["data"]["network_loaded"] is False
@@ -660,7 +660,7 @@ class TestContextManager:
         """FakeCascorClient works as a context manager."""
         with FakeCascorClient(scenario="two_spiral_training") as client:
             result = client.health_check()
-            assert result["status"] == "ok"
+            assert result["status"] == "success"
 
     @pytest.mark.unit
     def test_context_manager_closes_on_exit(self):
