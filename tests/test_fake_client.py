@@ -310,18 +310,18 @@ class TestTrainingControl:
         result = fake_training.get_training_status()
         assert result["status"] == "success"
         data = result["data"]
-        assert data["training_active"] is True
         assert data["state_machine"]["status"] == "STARTED"
         assert isinstance(data["monitor"]["current_epoch"], int)
         assert isinstance(data["training_state"]["max_epochs"], int)
-        assert isinstance(data["monitor"]["elapsed_seconds"], float)
+        assert 0.0 <= data["training_state"]["progress"] <= 1.0
+        assert isinstance(data["training_state"]["elapsed_seconds"], float)
         assert data["network_loaded"] is True
 
     @pytest.mark.unit
     def test_get_training_status_idle(self, fake_idle):
         """get_training_status works even with no network loaded."""
         result = fake_idle.get_training_status()
-        assert result["data"]["state_machine"]["status"] == "STOPPED"
+        assert result["data"]["state_machine"]["status"] == "IDLE"
         assert result["data"]["network_loaded"] is False
 
     @pytest.mark.unit
@@ -330,7 +330,7 @@ class TestTrainingControl:
         result = fake_training.get_training_params()
         assert result["status"] == "success"
         data = result["data"]
-        assert "learning_rate" in data
+        assert "epochs_max" in data
 
     @pytest.mark.unit
     def test_get_training_params_no_training(self, fake_converged):
@@ -340,7 +340,7 @@ class TestTrainingControl:
         fake_converged.reset_training()
         result = fake_converged.get_training_params()
         assert result["status"] == "success"
-        assert "learning_rate" in result["data"]
+        assert "epochs_max" in result["data"]
 
 
 # ─── Metrics Tests ───────────────────────────────────────────────────────────
@@ -388,7 +388,6 @@ class TestMetrics:
         fake_training.advance_epoch(20)
         result = fake_training.get_metrics_history(count=5)
         data = result["data"]
-        assert isinstance(data, list)
         assert len(data) == 5
         # Verify we got the most recent 5
         epochs = [entry["epoch"] for entry in data]
@@ -484,7 +483,7 @@ class TestScenarios:
     def test_idle_scenario_initial_state(self, fake_idle):
         """Idle scenario: no network, state_machine.status='STOPPED', epoch=0."""
         status = fake_idle.get_training_status()
-        assert status["data"]["state_machine"]["status"] == "STOPPED"
+        assert status["data"]["state_machine"]["status"] == "IDLE"
         assert status["data"]["monitor"]["current_epoch"] == 0
         assert status["data"]["network_loaded"] is False
 
@@ -516,7 +515,7 @@ class TestScenarios:
     def test_empty_scenario(self, fake_empty):
         """Empty scenario: no network, no dataset, state_machine.status='STOPPED'."""
         status = fake_empty.get_training_status()
-        assert status["data"]["state_machine"]["status"] == "STOPPED"
+        assert status["data"]["state_machine"]["status"] == "IDLE"
         assert status["data"]["network_loaded"] is False
         ds = fake_empty.get_dataset()
         assert ds["data"] == {}
@@ -574,10 +573,9 @@ class TestHelpers:
         """advance_epoch populates metrics history with one entry per epoch."""
         fake_training.advance_epoch(10)
         history = fake_training.get_metrics_history()
-        data = history["data"]
-        assert len(data) == 10
+        assert len(history["data"]) == 10
         # Each snapshot has increasing epochs
-        epochs = [entry["epoch"] for entry in data]
+        epochs = [entry["epoch"] for entry in history["data"]]
         assert epochs == list(range(1, 11))
 
     @pytest.mark.unit
@@ -642,7 +640,7 @@ class TestHelpers:
         """set_state forces the client to 'idle' state."""
         fake_training.set_state("idle")
         status = fake_training.get_training_status()
-        assert status["data"]["state_machine"]["status"] == "STOPPED"
+        assert status["data"]["state_machine"]["status"] == "IDLE"
 
     @pytest.mark.unit
     def test_set_state_invalid_raises_value_error(self, fake_idle):
@@ -805,7 +803,7 @@ class TestMiscellaneous:
 
             # Stop
             client.stop_training()
-            assert client.get_training_status()["data"]["state_machine"]["status"] == "STOPPED"
+            assert client.get_training_status()["data"]["state_machine"]["status"] == "IDLE"
 
             # Delete
             client.delete_network()

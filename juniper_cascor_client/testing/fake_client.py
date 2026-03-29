@@ -135,6 +135,15 @@ class FakeCascorClient:
         if self._closed:
             raise JuniperCascorClientError("Client is closed. Cannot make requests.")
 
+    @staticmethod
+    def _success_envelope(data: Any) -> Dict[str, Any]:
+        """Build a ResponseEnvelope matching the real cascor server format."""
+        return {
+            "status": "success",
+            "data": data,
+            "meta": {"timestamp": time.time(), "version": "0.4.0"},
+        }
+
     # ─── Health ──────────────────────────────────────────────────────────
 
     def health_check(self) -> Dict[str, Any]:
@@ -477,32 +486,40 @@ class FakeCascorClient:
             if self._training_params:
                 max_epochs = self._training_params.get("epochs", 1000)
 
-            hidden_units = 0
-            if self._topology:
-                hu = self._topology.get("hidden_units", 0)
-                hidden_units = len(hu) if isinstance(hu, list) else hu
+            progress = round(self._epoch / max_epochs, 4) if max_epochs > 0 else 0.0
+
+            config = self._network_config or {}
+
+            # Map internal state to cascor server state machine status
+            status_map = {
+                "training": "STARTED",
+                "paused": "PAUSED",
+                "complete": "COMPLETED",
+                "idle": "IDLE",
+            }
+            phase = "output" if self._state == "training" else "idle"
+            hidden_units = self._topology.get("hidden_units", 0) if self._topology else 0
 
             return self._success_envelope({
-                "training_active": self._state == "training",
-                "network_loaded": self._network_loaded,
                 "state_machine": {
-                    "status": self._STATE_TO_FSM.get(self._state, "STOPPED"),
-                    "phase": self._STATE_TO_PHASE.get(self._state, "IDLE"),
-                    "current_state": self._STATE_TO_FSM.get(self._state, "STOPPED"),
+                    "status": status_map.get(self._state, "IDLE"),
+                    "phase": phase,
                 },
                 "monitor": {
+                    "is_training": self._state == "training",
                     "current_epoch": self._epoch,
                     "current_hidden_units": hidden_units,
-                    "elapsed_seconds": elapsed,
+                    "total_metrics": len(self._metrics_history),
                 },
                 "training_state": {
-                    "learning_rate": self._network_config.get("learning_rate", 0.01) if self._network_config else 0.01,
+                    "learning_rate": config.get("learning_rate", 0.01),
+                    "max_hidden_units": config.get("max_hidden_units", 10),
                     "max_epochs": max_epochs,
-                    "max_hidden_units": self._network_config.get("max_hidden_units", 10) if self._network_config else 10,
-                    "input_size": self._network_config.get("input_size", 2) if self._network_config else 0,
-                    "output_size": self._network_config.get("output_size", 1) if self._network_config else 0,
-                    "phase": self._STATE_TO_PHASE.get(self._state, "IDLE"),
+                    "progress": min(progress, 1.0),
+                    "elapsed_seconds": elapsed,
                 },
+                "training_active": self._state == "training",
+                "network_loaded": self._network_loaded,
             })
 
     def get_training_params(self) -> Dict[str, Any]:
@@ -514,14 +531,18 @@ class FakeCascorClient:
             self._check_closed()
             self._maybe_raise_error("get_training_params")
 
-            if self._training_params is None:
-                params = copy.deepcopy(self._network_config) if self._network_config else {}
-            else:
-                params = copy.deepcopy(self._training_params.get("params", {}))
-                if not params and self._network_config:
-                    params = copy.deepcopy(self._network_config)
+            config = self._network_config or {}
+            if self._training_params and self._training_params.get("params"):
+                config = {**config, **self._training_params["params"]}
 
-            return self._success_envelope(params)
+            return self._success_envelope({
+                "learning_rate": config.get("learning_rate", 0.01),
+                "max_hidden_units": config.get("max_hidden_units", 10),
+                "epochs_max": config.get("epochs_max", 1000),
+                "patience": config.get("patience", 10),
+                "candidate_pool_size": config.get("candidate_pool_size", 8),
+                "correlation_threshold": config.get("correlation_threshold", 0.01),
+            })
 
     def update_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Update runtime-modifiable training parameters.
@@ -581,6 +602,9 @@ class FakeCascorClient:
             else:
                 current = generate_metrics_snapshot(self._epoch, self._scenario)
             current["timestamp"] = time.time()
+
+            current.pop("correlation", None)
+            current.setdefault("timestamp", time.time())
 
             return self._success_envelope(current)
 
@@ -643,10 +667,7 @@ class FakeCascorClient:
                 hidden_units=hidden_units,
             )
 
-            return {
-                "status": "success",
-                "data": boundary,
-            }
+            return self._success_envelope(boundary)
 
     # ─── Context Manager ─────────────────────────────────────────────────
 
