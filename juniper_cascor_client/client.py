@@ -216,6 +216,10 @@ class JuniperCascorClient:
         """Get current dataset metadata."""
         return self._get("/dataset")
 
+    def get_dataset_data(self) -> Dict[str, Any]:
+        """Get dataset arrays (train_x, train_y, optionally val_x, val_y) for visualization."""
+        return self._get("/dataset/data")
+
     def get_decision_boundary(self, resolution: int = 50) -> Dict[str, Any]:
         """Get decision boundary grid data for 2D visualization.
 

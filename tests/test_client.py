@@ -255,6 +255,22 @@ class TestDataEndpoints:
             assert result["data"]["train_shape"] == [500, 2]
 
     @responses.activate
+    def test_get_dataset_data(self):
+        data = {"train_x": [[0.1, 0.2]], "train_y": [[1.0, 0.0]]}
+        responses.add(responses.GET, f"{API_URL}/dataset/data", json=_envelope(data))
+        with JuniperCascorClient(BASE_URL) as client:
+            result = client.get_dataset_data()
+            assert result["data"]["train_x"] == [[0.1, 0.2]]
+            assert result["data"]["train_y"] == [[1.0, 0.0]]
+
+    @responses.activate
+    def test_get_dataset_data_not_found(self):
+        responses.add(responses.GET, f"{API_URL}/dataset/data", json=_error_response("NOT_FOUND", "No dataset loaded"), status=404)
+        with JuniperCascorClient(BASE_URL) as client:
+            with pytest.raises(JuniperCascorNotFoundError):
+                client.get_dataset_data()
+
+    @responses.activate
     def test_get_decision_boundary(self):
         responses.add(responses.GET, f"{API_URL}/decision-boundary", json=_envelope({"resolution": 50, "predictions": []}))
         with JuniperCascorClient(BASE_URL) as client:
