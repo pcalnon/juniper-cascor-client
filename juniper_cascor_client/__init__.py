@@ -8,7 +8,7 @@ from juniper_cascor_client.client import JuniperCascorClient
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorTimeoutError, JuniperCascorValidationError
 from juniper_cascor_client.ws_client import CascorControlStream, CascorTrainingStream
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "JuniperCascorClient",

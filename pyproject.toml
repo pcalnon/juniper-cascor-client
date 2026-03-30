@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "juniper-cascor-client"
-version = "0.2.0"
+version = "0.3.0"
 description = "HTTP/WebSocket client for the JuniperCascor neural network training service"
 readme = "README.md"
 license = "MIT"

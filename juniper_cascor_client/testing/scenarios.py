@@ -451,6 +451,57 @@ def generate_decision_boundary(
     }
 
 
+def generate_dataset_inputs(num_samples: int, num_features: int) -> List[List[float]]:
+    """Generate deterministic synthetic dataset input arrays.
+
+    Uses sin/cos arithmetic seeded on sample index for reproducible results.
+    Values are distributed in [-1.5, 1.5] matching decision boundary grid range.
+
+    Args:
+        num_samples: Number of data points to generate.
+        num_features: Number of input features per sample.
+
+    Returns:
+        2D list of shape (num_samples, num_features).
+    """
+    inputs: List[List[float]] = []
+    for i in range(num_samples):
+        row: List[float] = []
+        for f in range(num_features):
+            angle = 2.0 * math.pi * i / max(num_samples, 1) + f * 0.5
+            value = 1.5 * math.sin(angle) * math.cos(angle * 0.3 + f)
+            row.append(round(value, 6))
+        inputs.append(row)
+    return inputs
+
+
+def generate_dataset_targets(num_samples: int, num_classes: int) -> List[List[float]]:
+    """Generate deterministic synthetic dataset target arrays.
+
+    For binary classification (num_classes <= 2), returns single-element
+    vectors [[0.0], [1.0], ...]. For multiclass, returns one-hot vectors.
+
+    Args:
+        num_samples: Number of data points.
+        num_classes: Number of output classes.
+
+    Returns:
+        2D list of shape (num_samples, output_size) where output_size
+        is 1 for binary or num_classes for multiclass.
+    """
+    targets: List[List[float]] = []
+    if num_classes <= 2:
+        for i in range(num_samples):
+            label = 1.0 if (i % 2 == 0) else 0.0
+            targets.append([label])
+    else:
+        for i in range(num_samples):
+            one_hot = [0.0] * num_classes
+            one_hot[i % num_classes] = 1.0
+            targets.append(one_hot)
+    return targets
+
+
 def generate_weight_statistics(hidden_units: int = 0) -> Dict[str, Any]:
     """Generate synthetic network weight statistics.
 

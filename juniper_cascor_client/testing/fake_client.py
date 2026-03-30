@@ -18,7 +18,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorValidationError
-from juniper_cascor_client.testing.scenarios import SCENARIO_DEFAULTS, build_cascor_topology, build_network_config, generate_decision_boundary, generate_metrics_snapshot, generate_weight_statistics, get_scenario_data
+from juniper_cascor_client.testing.scenarios import SCENARIO_DEFAULTS, build_cascor_topology, build_network_config, generate_dataset_inputs, generate_dataset_targets, generate_decision_boundary, generate_metrics_snapshot, generate_weight_statistics, get_scenario_data
 
 # Valid training states and allowed transitions
 VALID_STATES = {"idle", "training", "paused", "complete"}
@@ -638,6 +638,29 @@ class FakeCascorClient:
                 return self._success_envelope({})
 
             return self._success_envelope(copy.deepcopy(self._dataset))
+
+    def get_dataset_data(self) -> Dict[str, Any]:
+        """Get dataset arrays for visualization.
+
+        Generates synthetic train_x/train_y arrays from scenario metadata
+        (samples, features, classes) for visualization and testing.
+
+        Raises:
+            JuniperCascorNotFoundError: If no dataset is loaded.
+        """
+        with self._lock:
+            self._check_closed()
+            self._maybe_raise_error("get_dataset_data")
+
+            if self._dataset is None:
+                raise JuniperCascorNotFoundError("No dataset loaded.")
+
+            samples = self._dataset.get("train_samples", 4)
+            features = self._dataset.get("features", 2)
+            classes = self._dataset.get("classes", 2)
+            train_x = generate_dataset_inputs(samples, features)
+            train_y = generate_dataset_targets(samples, classes)
+            return self._success_envelope({"train_x": train_x, "train_y": train_y})
 
     def get_decision_boundary(self, resolution: int = 50) -> Dict[str, Any]:
         """Get decision boundary grid data for 2D visualization.
