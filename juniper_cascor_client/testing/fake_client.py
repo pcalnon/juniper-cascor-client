@@ -770,14 +770,16 @@ class FakeCascorClient:
             hidden = 0 if snapshot_id == "snap-001" else 1
             desc = "Before candidate installation" if snapshot_id == "snap-001" else "After first hidden unit"
 
-            return self._success_envelope({
-                "snapshot_id": snapshot_id,
-                "description": desc,
-                "epoch": epoch,
-                "hidden_units": hidden,
-                "created_at": time.time() - (300 if snapshot_id == "snap-001" else 60),
-                "network_config": copy.deepcopy(self._network_config),
-            })
+            return self._success_envelope(
+                {
+                    "snapshot_id": snapshot_id,
+                    "description": desc,
+                    "epoch": epoch,
+                    "hidden_units": hidden,
+                    "created_at": time.time() - (300 if snapshot_id == "snap-001" else 60),
+                    "network_config": copy.deepcopy(self._network_config),
+                }
+            )
 
     def save_snapshot(self, description: str = "") -> Dict[str, Any]:
         """Save current network state as a snapshot.
@@ -798,14 +800,16 @@ class FakeCascorClient:
             snapshot_id = f"snap-{int(time.time())}"
             hidden_units = self._topology.get("hidden_units", 0) if self._topology else 0
 
-            return self._success_envelope({
-                "snapshot_id": snapshot_id,
-                "description": description,
-                "epoch": self._epoch,
-                "hidden_units": hidden_units,
-                "created_at": time.time(),
-                "message": "Snapshot saved.",
-            })
+            return self._success_envelope(
+                {
+                    "snapshot_id": snapshot_id,
+                    "description": description,
+                    "epoch": self._epoch,
+                    "hidden_units": hidden_units,
+                    "created_at": time.time(),
+                    "message": "Snapshot saved.",
+                }
+            )
 
     def load_snapshot(self, snapshot_id: str) -> Dict[str, Any]:
         """Restore network state from a snapshot.
@@ -830,11 +834,98 @@ class FakeCascorClient:
             if snapshot_id not in ("snap-001", "snap-002"):
                 raise JuniperCascorNotFoundError(f"Snapshot '{snapshot_id}' not found.")
 
-            return self._success_envelope({
-                "snapshot_id": snapshot_id,
-                "restored": True,
-                "message": f"Network state restored from snapshot '{snapshot_id}'.",
-            })
+            return self._success_envelope(
+                {
+                    "snapshot_id": snapshot_id,
+                    "restored": True,
+                    "message": f"Network state restored from snapshot '{snapshot_id}'.",
+                }
+            )
+
+    # ─── Workers ─────────────────────────────────────────────────────────
+
+    def list_workers(self) -> Dict[str, Any]:
+        """List all registered remote workers with status."""
+        with self._lock:
+            self._check_closed()
+            self._maybe_raise_error("list_workers")
+
+            workers = [
+                {
+                    "worker_id": "worker-demo-01",
+                    "capabilities": {"cpu_cores": 8, "gpu": False, "python": "3.13"},
+                    "connected_at": time.time() - 600,
+                    "last_heartbeat": time.time() - 2,
+                    "tasks_completed": 12,
+                    "tasks_failed": 0,
+                    "active_task_id": None,
+                    "health_score": 1.0,
+                    "idle": True,
+                },
+                {
+                    "worker_id": "worker-demo-02",
+                    "capabilities": {"cpu_cores": 4, "gpu": True, "python": "3.13"},
+                    "connected_at": time.time() - 300,
+                    "last_heartbeat": time.time() - 1,
+                    "tasks_completed": 8,
+                    "tasks_failed": 1,
+                    "active_task_id": "task-abc",
+                    "health_score": 0.8889,
+                    "idle": False,
+                },
+            ]
+            return self._success_envelope({"workers": workers, "count": len(workers)})
+
+    def get_worker(self, worker_id: str) -> Dict[str, Any]:
+        """Get details for a specific worker.
+
+        Args:
+            worker_id: Worker identifier.
+
+        Raises:
+            JuniperCascorNotFoundError: If worker not found.
+        """
+        with self._lock:
+            self._check_closed()
+            self._maybe_raise_error("get_worker")
+
+            known = {"worker-demo-01", "worker-demo-02"}
+            if worker_id not in known:
+                raise JuniperCascorNotFoundError(f"Worker '{worker_id}' not found")
+
+            is_first = worker_id == "worker-demo-01"
+            return self._success_envelope(
+                {
+                    "worker_id": worker_id,
+                    "capabilities": {"cpu_cores": 8 if is_first else 4, "gpu": not is_first, "python": "3.13"},
+                    "connected_at": time.time() - (600 if is_first else 300),
+                    "last_heartbeat": time.time() - (2 if is_first else 1),
+                    "tasks_completed": 12 if is_first else 8,
+                    "tasks_failed": 0 if is_first else 1,
+                    "active_task_id": None if is_first else "task-abc",
+                    "health_score": 1.0 if is_first else 0.8889,
+                    "idle": is_first,
+                }
+            )
+
+    def get_worker_stats(self) -> Dict[str, Any]:
+        """Get aggregate worker statistics."""
+        with self._lock:
+            self._check_closed()
+            self._maybe_raise_error("get_worker_stats")
+
+            return self._success_envelope(
+                {
+                    "total": 2,
+                    "idle": 1,
+                    "busy": 1,
+                    "stale": 0,
+                    "total_tasks_completed": 20,
+                    "total_tasks_failed": 1,
+                    "average_health_score": 0.9444,
+                    "timestamp": time.time(),
+                }
+            )
 
     # ─── Context Manager ─────────────────────────────────────────────────
 

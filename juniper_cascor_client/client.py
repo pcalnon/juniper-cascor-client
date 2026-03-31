@@ -258,6 +258,24 @@ class JuniperCascorClient:
         """
         return self._post(f"/snapshots/{snapshot_id}/restore")
 
+    # ─── Workers ─────────────────────────────────────────────────────────
+
+    def list_workers(self) -> Dict[str, Any]:
+        """List all registered remote workers with status."""
+        return self._get("/workers")
+
+    def get_worker(self, worker_id: str) -> Dict[str, Any]:
+        """Get details for a specific worker.
+
+        Args:
+            worker_id: Worker identifier.
+        """
+        return self._get(f"/workers/{worker_id}")
+
+    def get_worker_stats(self) -> Dict[str, Any]:
+        """Get aggregate worker statistics."""
+        return self._get("/workers/stats")
+
     # ─── Context Manager ─────────────────────────────────────────────────
 
     def close(self) -> None:
