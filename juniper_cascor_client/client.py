@@ -228,6 +228,36 @@ class JuniperCascorClient:
         """
         return self._get("/decision-boundary", params={"resolution": resolution})
 
+    # ─── Snapshots ───────────────────────────────────────────────────────
+
+    def list_snapshots(self) -> Dict[str, Any]:
+        """List available network snapshots."""
+        return self._get("/snapshots")
+
+    def get_snapshot(self, snapshot_id: str) -> Dict[str, Any]:
+        """Get metadata for a specific snapshot.
+
+        Args:
+            snapshot_id: Snapshot identifier.
+        """
+        return self._get(f"/snapshots/{snapshot_id}")
+
+    def save_snapshot(self, description: str = "") -> Dict[str, Any]:
+        """Save current network state as a snapshot.
+
+        Args:
+            description: Optional description for the snapshot.
+        """
+        return self._post("/snapshots", json={"description": description})
+
+    def load_snapshot(self, snapshot_id: str) -> Dict[str, Any]:
+        """Restore network state from a snapshot.
+
+        Args:
+            snapshot_id: Snapshot identifier to restore.
+        """
+        return self._post(f"/snapshots/{snapshot_id}/restore")
+
     # ─── Context Manager ─────────────────────────────────────────────────
 
     def close(self) -> None:

@@ -714,6 +714,128 @@ class FakeCascorClient:
 
             return self._success_envelope(boundary)
 
+    # ─── Snapshots ───────────────────────────────────────────────────────
+
+    def list_snapshots(self) -> Dict[str, Any]:
+        """List available network snapshots."""
+        with self._lock:
+            self._check_closed()
+            self._maybe_raise_error("list_snapshots")
+
+            if not self._network_loaded:
+                raise JuniperCascorNotFoundError("No network loaded.")
+
+            snapshots: List[Dict[str, Any]] = []
+            if self._state in ("training", "paused", "complete"):
+                snapshots = [
+                    {
+                        "snapshot_id": "snap-001",
+                        "description": "Before candidate installation",
+                        "epoch": max(0, self._epoch - 5),
+                        "hidden_units": 0,
+                        "created_at": time.time() - 300,
+                    },
+                    {
+                        "snapshot_id": "snap-002",
+                        "description": "After first hidden unit",
+                        "epoch": self._epoch,
+                        "hidden_units": 1,
+                        "created_at": time.time() - 60,
+                    },
+                ]
+
+            return self._success_envelope({"snapshots": snapshots, "count": len(snapshots)})
+
+    def get_snapshot(self, snapshot_id: str) -> Dict[str, Any]:
+        """Get metadata for a specific snapshot.
+
+        Args:
+            snapshot_id: Snapshot identifier.
+
+        Raises:
+            JuniperCascorNotFoundError: If no network is loaded or snapshot not found.
+        """
+        with self._lock:
+            self._check_closed()
+            self._maybe_raise_error("get_snapshot")
+
+            if not self._network_loaded:
+                raise JuniperCascorNotFoundError("No network loaded.")
+
+            # Only recognize the two fake snapshot IDs
+            if snapshot_id not in ("snap-001", "snap-002"):
+                raise JuniperCascorNotFoundError(f"Snapshot '{snapshot_id}' not found.")
+
+            epoch = max(0, self._epoch - 5) if snapshot_id == "snap-001" else self._epoch
+            hidden = 0 if snapshot_id == "snap-001" else 1
+            desc = "Before candidate installation" if snapshot_id == "snap-001" else "After first hidden unit"
+
+            return self._success_envelope({
+                "snapshot_id": snapshot_id,
+                "description": desc,
+                "epoch": epoch,
+                "hidden_units": hidden,
+                "created_at": time.time() - (300 if snapshot_id == "snap-001" else 60),
+                "network_config": copy.deepcopy(self._network_config),
+            })
+
+    def save_snapshot(self, description: str = "") -> Dict[str, Any]:
+        """Save current network state as a snapshot.
+
+        Args:
+            description: Optional description for the snapshot.
+
+        Raises:
+            JuniperCascorNotFoundError: If no network is loaded.
+        """
+        with self._lock:
+            self._check_closed()
+            self._maybe_raise_error("save_snapshot")
+
+            if not self._network_loaded:
+                raise JuniperCascorNotFoundError("No network loaded.")
+
+            snapshot_id = f"snap-{int(time.time())}"
+            hidden_units = self._topology.get("hidden_units", 0) if self._topology else 0
+
+            return self._success_envelope({
+                "snapshot_id": snapshot_id,
+                "description": description,
+                "epoch": self._epoch,
+                "hidden_units": hidden_units,
+                "created_at": time.time(),
+                "message": "Snapshot saved.",
+            })
+
+    def load_snapshot(self, snapshot_id: str) -> Dict[str, Any]:
+        """Restore network state from a snapshot.
+
+        Args:
+            snapshot_id: Snapshot identifier to restore.
+
+        Raises:
+            JuniperCascorNotFoundError: If no network is loaded or snapshot not found.
+            JuniperCascorConflictError: If training is active.
+        """
+        with self._lock:
+            self._check_closed()
+            self._maybe_raise_error("load_snapshot")
+
+            if not self._network_loaded:
+                raise JuniperCascorNotFoundError("No network loaded.")
+
+            if self._state == "training":
+                raise JuniperCascorConflictError("Cannot load snapshot while training is active. Stop training first.")
+
+            if snapshot_id not in ("snap-001", "snap-002"):
+                raise JuniperCascorNotFoundError(f"Snapshot '{snapshot_id}' not found.")
+
+            return self._success_envelope({
+                "snapshot_id": snapshot_id,
+                "restored": True,
+                "message": f"Network state restored from snapshot '{snapshot_id}'.",
+            })
+
     # ─── Context Manager ─────────────────────────────────────────────────
 
     def close(self) -> None:
