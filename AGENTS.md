@@ -1,10 +1,10 @@
 # AGENTS.md - Juniper Cascor Client
 
-**Project**: juniper-cascor-client — HTTP/WebSocket Client for JuniperCascor
-**Version**: 0.1.0
+**Project**: juniper-cascor-client — HTTP/WebSocket Client for juniper-cascor
+**Version**: 0.3.0
 **License**: MIT License
 **Author**: Paul Calnon
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-04-02
 
 ---
 
@@ -26,35 +26,318 @@ pytest tests/ --cov=juniper_cascor_client --cov-report=term-missing --cov-fail-u
 mypy juniper_cascor_client --strict
 
 # Linting
-flake8 juniper_cascor_client --max-line-length=120
+flake8 juniper_cascor_client --max-line-length=512
 black --check --diff juniper_cascor_client
 isort --check-only --diff juniper_cascor_client
+
+# Pre-commit (all hooks)
+pre-commit run --all-files
+
+# Build package
+python -m build
+twine check dist/*
+
+# Validate documentation links
+python scripts/check_doc_links.py
+
+# Generate dependency documentation
+bash scripts/generate_dep_docs.sh
 ```
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `juniper_cascor_client/client.py` | REST client class |
-| `juniper_cascor_client/ws_client.py` | WebSocket client for training/control streams |
-| `juniper_cascor_client/exceptions.py` | Client exception classes |
-| `juniper_cascor_client/__init__.py` | Public API exports |
-| `pyproject.toml` | Package config, dependencies |
-| `tests/` | Test suite (pytest, pytest-asyncio) |
+| `juniper_cascor_client/client.py` | REST client class (`JuniperCascorClient`) |
+| `juniper_cascor_client/ws_client.py` | WebSocket clients (`CascorTrainingStream`, `CascorControlStream`) |
+| `juniper_cascor_client/exceptions.py` | Exception hierarchy (7 classes) |
+| `juniper_cascor_client/__init__.py` | Public API exports and version |
+| `juniper_cascor_client/py.typed` | PEP 561 typed package marker |
+| `juniper_cascor_client/testing/` | Testing utilities submodule |
+| `juniper_cascor_client/testing/fake_client.py` | In-memory fake REST client (`FakeCascorClient`) |
+| `juniper_cascor_client/testing/fake_ws_client.py` | In-memory fake WebSocket client (`FakeCascorTrainingStream`) |
+| `juniper_cascor_client/testing/scenarios.py` | Scenario data, metric curve generators, topology builders |
+| `pyproject.toml` | Package config, dependencies, tool settings |
+| `tests/` | Test suite (pytest, pytest-asyncio, responses) |
+| `tests/conftest.py` | Shared fixtures (5 scenario-based fake clients) |
+| `docs/` | User documentation (reference, quick start, cheatsheet) |
+| `scripts/` | Utility scripts (doc link check, dep doc generation) |
+| `notes/` | Procedures and templates |
+| `CHANGELOG.md` | Version history (Keep a Changelog format) |
+| `.pre-commit-config.yaml` | Pre-commit hook configuration (10+ hooks) |
+| `.github/workflows/ci.yml` | CI/CD pipeline (GitHub Actions) |
+| `.github/workflows/publish.yml` | PyPI publishing workflow |
+| `.env.example` | Environment variable template |
 
 ---
 
 ## Project Overview
 
-`juniper-cascor-client` is the official Python client library for the JuniperCascor training service. It provides both a synchronous REST client and async WebSocket streams for real-time training monitoring and control.
+`juniper-cascor-client` is the official Python client library for the juniper-cascor training service. It provides:
+
+- **Synchronous REST client** (`JuniperCascorClient`) — 42+ methods across 8 API categories with connection pooling, retry logic, and structured error handling
+- **Async WebSocket streams** — `CascorTrainingStream` (callback/iterator-based real-time monitoring) and `CascorControlStream` (command/response control)
+- **Testing utilities submodule** (`juniper_cascor_client.testing`) — Thread-safe fake clients with scenario-driven state machines for consumer testing without a live service
+
+### Python Version Support
+
+- **Requires**: `>=3.11`
+- **Tested on**: 3.11, 3.12, 3.13
+- **Classified for**: 3.11, 3.12, 3.13, 3.14
 
 ### Dependencies
 
-| Library | Purpose |
-|---------|---------|
-| `requests` | HTTP REST client |
-| `urllib3` | HTTP connection pooling |
-| `websockets` | Async WebSocket connectivity |
+#### Runtime
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| `requests` | `>=2.28.0` | HTTP REST client with session management |
+| `urllib3` | `>=2.0.0` | HTTP connection pooling and retry strategy |
+| `websockets` | `>=11.0` | Async WebSocket client |
+
+#### Test (`pip install -e ".[test]"`)
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| `pytest` | `>=7.0.0` | Test framework |
+| `pytest-cov` | `>=4.0.0` | Coverage reporting |
+| `pytest-timeout` | `>=2.2.0` | Per-test timeout enforcement (30s) |
+| `pytest-asyncio` | `>=0.21.0` | Async test support |
+| `responses` | `>=0.23.0` | HTTP response mocking |
+
+#### Dev (`pip install -e ".[dev]"`)
+
+Includes all test dependencies plus:
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| `black` | `>=23.0.0` | Code formatting |
+| `isort` | `>=5.12.0` | Import sorting |
+| `mypy` | `>=1.0.0` | Static type checking (strict mode) |
+| `flake8` | `>=7.0.0` | Linting |
+| `types-requests` | `>=2.28.0` | Type stubs for requests |
+
+---
+
+## Architecture
+
+### Class Hierarchy
+
+```text
+JuniperCascorClient          Synchronous REST client (context manager)
+  ├── Health:                health_check(), is_alive(), is_ready(), wait_for_ready()
+  ├── Network:               create_network(), get_network(), delete_network(), get_topology(), get_statistics()
+  ├── Training Control:      start_training(), stop_training(), pause_training(), resume_training(), reset_training()
+  ├── Status & Params:       get_training_status(), get_training_params(), update_params()
+  ├── Metrics:               get_metrics(), get_metrics_history()
+  ├── Data & Visualization:  get_dataset(), get_dataset_data(), get_decision_boundary()
+  ├── Snapshots:             list_snapshots(), get_snapshot(), save_snapshot(), load_snapshot()
+  └── Workers:               list_workers(), get_worker(), get_worker_stats()
+
+CascorTrainingStream         Async WebSocket streaming client (async context manager, async iterator)
+  ├── connect(), disconnect()
+  ├── stream() -> AsyncIterator
+  ├── listen() (callback dispatch)
+  ├── send_command()
+  └── Callbacks: on_metrics(), on_state(), on_topology(), on_cascade_add(), on_event()
+
+CascorControlStream          Async WebSocket command/response client (async context manager)
+  ├── connect(), disconnect()
+  └── command() -> Dict (send and wait for response)
+```
+
+### Exception Hierarchy
+
+```text
+JuniperCascorClientError (base)
+  ├── JuniperCascorConnectionError       Network/connection failures
+  ├── JuniperCascorTimeoutError          Request timeout
+  ├── JuniperCascorNotFoundError         HTTP 404
+  ├── JuniperCascorConflictError         HTTP 409
+  ├── JuniperCascorValidationError       HTTP 400/422
+  └── JuniperCascorServiceUnavailableError  HTTP 503
+```
+
+### Testing Utilities (`juniper_cascor_client.testing`)
+
+| Class | Purpose |
+|-------|---------|
+| `FakeCascorClient` | In-memory REST client fake with 5 scenarios, thread-safe, full API parity |
+| `FakeCascorTrainingStream` | In-memory WebSocket stream fake with message injection |
+
+**Scenarios**: `idle`, `two_spiral_training`, `xor_converged`, `empty`, `error_prone`
+
+### Key Design Patterns
+
+- **Context Manager**: REST client (sync `with`), WebSocket clients (async `async with`)
+- **Callback/Observer**: WebSocket training stream dispatches to registered callbacks by message type
+- **Async Iteration**: `async for message in stream.stream():`
+- **Retry with Backoff**: HTTP adapter retries 502/504 with 0.5s exponential backoff (3 retries)
+- **Connection Pooling**: 10 max connections per host via `HTTPAdapter`
+- **Response Envelope**: All responses wrapped as `{"status": "success", "data": {...}, "meta": {...}}`
+- **State Machine**: FakeCascorClient implements training state transitions (idle -> training -> paused -> complete)
+- **Scenario-Driven Testing**: Configurable scenarios generate realistic metric curves, topologies, and datasets
+
+---
+
+## Directory Layout
+
+```text
+juniper-cascor-client/
+├── juniper_cascor_client/           # Main package
+│   ├── __init__.py                  # Public API exports, version (0.3.0)
+│   ├── client.py                    # JuniperCascorClient (REST, 353 lines)
+│   ├── ws_client.py                 # CascorTrainingStream, CascorControlStream (212 lines)
+│   ├── exceptions.py                # Exception hierarchy (43 lines)
+│   ├── py.typed                     # PEP 561 marker
+│   └── testing/                     # Testing utilities submodule
+│       ├── __init__.py              # Exports FakeCascorClient, FakeCascorTrainingStream
+│       ├── fake_client.py           # In-memory fake REST client (1003 lines)
+│       ├── fake_ws_client.py        # In-memory fake WebSocket client (222 lines)
+│       └── scenarios.py             # Scenario data, curve generators (554 lines)
+├── tests/                           # Test suite
+│   ├── conftest.py                  # Pytest fixtures (5 scenario fixtures)
+│   ├── test_client.py               # REST client unit tests
+│   ├── test_client_update_params.py # Parameter update tests
+│   ├── test_fake_client.py          # FakeCascorClient comprehensive tests
+│   ├── test_fake_client_update_params.py  # Fake client param update tests
+│   ├── test_fake_client_workers.py  # Worker/async tests
+│   ├── test_fake_ws_client.py       # FakeCascorTrainingStream tests
+│   └── test_ws_client.py            # WebSocket client tests
+├── docs/                            # User documentation
+│   ├── DOCUMENTATION_OVERVIEW.md    # Documentation index and navigation
+│   ├── REFERENCE.md                 # Complete API reference
+│   ├── QUICK_START.md               # Getting started guide
+│   └── DEVELOPER_CHEATSHEET.md      # Developer quick reference
+├── notes/                           # Procedures and templates
+│   ├── WORKTREE_SETUP_PROCEDURE.md
+│   ├── WORKTREE_CLEANUP_PROCEDURE_V2.md
+│   ├── THREAD_HANDOFF_PROCEDURE.md
+│   ├── CONDA_DEPENDENCY_FILE_HEADER.md
+│   ├── PIP_DEPENDENCY_FILE_HEADER.md
+│   ├── juniper-cascor-client_OTHER_DEPENDENCIES.md
+│   └── history/                     # Archived procedures
+│       └── WORKTREE_CLEANUP_PROCEDURE_V1.md
+├── scripts/                         # Utility scripts
+│   ├── check_doc_links.py           # Documentation link validator
+│   └── generate_dep_docs.sh         # Dependency doc generator (conf/*.txt, conf/*.yaml)
+├── .github/
+│   ├── CODEOWNERS                   # Code ownership (@pcalnon)
+│   ├── dependabot.yml               # Automated dependency updates (weekly)
+│   └── workflows/
+│       ├── ci.yml                   # CI/CD pipeline (pre-commit, tests, build, security)
+│       └── publish.yml              # PyPI/TestPyPI publishing
+├── conf/                            # Generated dependency documentation (created by scripts/generate_dep_docs.sh, gitignored)
+├── AGENTS.md                        # This file
+├── CLAUDE.md                        # Symlink -> AGENTS.md
+├── CHANGELOG.md                     # Version history
+├── README.md                        # PyPI/GitHub landing page
+├── LICENSE                          # MIT License
+├── pyproject.toml                   # Package configuration
+├── .pre-commit-config.yaml          # Pre-commit hooks
+├── .env.example                     # Environment variable template
+├── .sops.yaml                       # SOPS encryption config for .env files
+├── .markdownlint.yaml               # Markdown linting rules
+└── .gitignore
+```
+
+---
+
+## Environment Variables
+
+| Variable | Used By | Purpose | Default |
+|----------|---------|---------|---------|
+| `JUNIPER_CASCOR_API_KEY` | `JuniperCascorClient` | API key fallback (if not passed to constructor) | None |
+| `CASCOR_SERVICE_URL` | Consumers (juniper-canopy, juniper-deploy) | Service URL override | `http://localhost:8200` |
+
+Template: `.env.example`
+
+---
+
+## Linting & Formatting
+
+All tools use the **Juniper ecosystem standard line length of 512**.
+
+| Tool | Config Location | Key Settings |
+|------|-----------------|--------------|
+| **black** | `pyproject.toml` | line-length=512, target py311/py312/py313 |
+| **isort** | `pyproject.toml` | profile=black, line-length=512 |
+| **flake8** | `.pre-commit-config.yaml` | max-line-length=512, max-complexity=15 (source) / 25 (tests) |
+| **mypy** | `pyproject.toml` | strict=true, python_version=3.11, ignore_missing_imports=false |
+| **bandit** | `.pre-commit-config.yaml` | Strict for source, relaxed for tests (allows assert, hardcoded values) |
+| **markdownlint** | `.markdownlint.yaml` | line-length=512, excludes CHANGELOG.md/notes/docs |
+| **shellcheck** | `.pre-commit-config.yaml` | severity=warning |
+| **yamllint** | `.pre-commit-config.yaml` | relaxed config |
+
+---
+
+## Test Organization
+
+### Structure
+
+- **Framework**: pytest with strict markers
+- **Coverage requirement**: 80% (branch coverage enabled)
+- **Timeout**: 30 seconds per test
+- **Markers**: `unit`, `integration`
+
+### Fixtures (conftest.py)
+
+| Fixture | Scenario | Description |
+|---------|----------|-------------|
+| `fake_idle` | `idle` | Ready for network creation |
+| `fake_training` | `two_spiral_training` | Active training with realistic metric curves |
+| `fake_converged` | `xor_converged` | Fully trained network |
+| `fake_empty` | `empty` | Minimal responses (negative testing) |
+| `fake_error` | `error_prone` | ~10% random error rate |
+
+### Test Files
+
+| File | Coverage |
+|------|----------|
+| `test_client.py` | REST client methods (mocked HTTP via `responses`) |
+| `test_client_update_params.py` | Runtime parameter update method |
+| `test_ws_client.py` | WebSocket client connect/stream/disconnect |
+| `test_fake_client.py` | FakeCascorClient all methods, scenarios, state machine |
+| `test_fake_client_update_params.py` | FakeCascorClient parameter updates |
+| `test_fake_client_workers.py` | FakeCascorClient worker endpoints |
+| `test_fake_ws_client.py` | FakeCascorTrainingStream message injection, callbacks |
+
+---
+
+## CI/CD Pipeline
+
+### GitHub Actions Workflows
+
+#### `ci.yml` — Main Pipeline
+
+**Triggers**: push (main, develop, feature/\*\*, fix/\*\*), pull requests, workflow_dispatch
+
+| Job | Matrix | Purpose |
+|-----|--------|---------|
+| **pre-commit** | Python 3.11, 3.12, 3.13 | All pre-commit hooks |
+| **docs** | Single run | Documentation link validation |
+| **unit-tests** | Python 3.11, 3.12, 3.13 | pytest with 80% coverage gate |
+| **build** | Single run | sdist + wheel + twine check |
+| **dependency-docs** | Single run | Generate conf/ files |
+| **security** | Single run | Gitleaks, Bandit SARIF, pip-audit |
+| **required-checks** | Aggregator | Quality gate (all jobs must pass) |
+| **notify-downstream** | Main branch only | Triggers juniper-canopy CI via repository dispatch |
+
+#### `publish.yml` — PyPI Publishing
+
+**Trigger**: GitHub release published
+
+1. Build and publish to TestPyPI, verify installation
+2. Build and publish to production PyPI (trusted publishing / OIDC)
+
+### Security Scanning
+
+| Tool | Purpose | Integration |
+|------|---------|-------------|
+| **Gitleaks** | Secrets detection in git history | CI job |
+| **Bandit** | Python SAST (SARIF upload to GitHub Security) | CI job + pre-commit |
+| **pip-audit** | Dependency vulnerability scanning | CI job |
+| **SOPS** | Age encryption for .env files | Pre-commit hook blocks unencrypted .env |
 
 ---
 
@@ -65,9 +348,17 @@ Part of the Juniper ecosystem. See the parent directory's `CLAUDE.md` at `/home/
 ### Position in Dependency Graph
 
 ```text
-juniper-ml[clients] --> juniper-cascor-client --> JuniperCascor (service)
-JuniperCanopy --> juniper-cascor-client --> JuniperCascor (service)
+juniper-ml[clients]  ──depends on──>  juniper-cascor-client  ──calls──>  juniper-cascor (REST/WebSocket)
+juniper-canopy       ──depends on──>  juniper-cascor-client  ──calls──>  juniper-cascor (REST/WebSocket)
 ```
+
+### Cross-Repo CI
+
+On push to `main`, the CI pipeline dispatches a workflow trigger to `juniper-canopy` to verify downstream compatibility.
+
+### Service Port
+
+juniper-cascor listens on port **8200** (host and container). The default `base_url` for the REST client is `http://localhost:8200`.
 
 ---
 
