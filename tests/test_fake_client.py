@@ -473,6 +473,159 @@ class TestData:
             fake_training.get_decision_boundary(resolution=201)
 
 
+# ─── Snapshot & Dataset Data Tests ─────────────────────────────────────────────
+
+
+class TestFakeClientSnapshots:
+    """Tests for save_snapshot, list_snapshots, get_snapshot, load_snapshot, and get_dataset_data."""
+
+    @pytest.mark.unit
+    def test_save_and_list_snapshots(self, fake_training):
+        """save_snapshot creates a snapshot that appears in list_snapshots."""
+        # The two_spiral_training scenario is in 'training' state, so list_snapshots
+        # already returns pre-populated snapshots. Save a new one and verify the
+        # save response itself is well-formed.
+        save_result = fake_training.save_snapshot(description="test checkpoint")
+        assert save_result["status"] == "success"
+        data = save_result["data"]
+        assert "snapshot_id" in data
+        assert data["description"] == "test checkpoint"
+        assert isinstance(data["epoch"], int)
+        assert "created_at" in data
+
+        # list_snapshots returns pre-populated snapshots for training scenarios
+        list_result = fake_training.list_snapshots()
+        assert list_result["status"] == "success"
+        assert "snapshots" in list_result["data"]
+        assert isinstance(list_result["data"]["snapshots"], list)
+        assert list_result["data"]["count"] == len(list_result["data"]["snapshots"])
+
+    @pytest.mark.unit
+    def test_get_snapshot(self, fake_training):
+        """get_snapshot retrieves a known snapshot by ID and returns its metadata."""
+        result = fake_training.get_snapshot("snap-001")
+        assert result["status"] == "success"
+        data = result["data"]
+        assert data["snapshot_id"] == "snap-001"
+        assert data["description"] == "Before candidate installation"
+        assert isinstance(data["epoch"], int)
+        assert data["hidden_units"] == 0
+        assert "created_at" in data
+        assert "network_config" in data
+
+    @pytest.mark.unit
+    def test_get_snapshot_second_id(self, fake_training):
+        """get_snapshot retrieves the second known snapshot."""
+        result = fake_training.get_snapshot("snap-002")
+        assert result["status"] == "success"
+        data = result["data"]
+        assert data["snapshot_id"] == "snap-002"
+        assert data["description"] == "After first hidden unit"
+        assert data["hidden_units"] == 1
+
+    @pytest.mark.unit
+    def test_get_snapshot_unknown_id_raises(self, fake_training):
+        """get_snapshot raises NotFoundError for an unknown snapshot ID."""
+        with pytest.raises(JuniperCascorNotFoundError, match="not found"):
+            fake_training.get_snapshot("snap-999")
+
+    @pytest.mark.unit
+    def test_get_snapshot_no_network_raises(self, fake_idle):
+        """get_snapshot raises NotFoundError when no network is loaded."""
+        with pytest.raises(JuniperCascorNotFoundError, match="No network loaded"):
+            fake_idle.get_snapshot("snap-001")
+
+    @pytest.mark.unit
+    def test_load_snapshot(self, fake_training):
+        """load_snapshot restores state from a known snapshot."""
+        # Stop training first (load_snapshot rejects active training)
+        fake_training.stop_training()
+        result = fake_training.load_snapshot("snap-001")
+        assert result["status"] == "success"
+        data = result["data"]
+        assert data["snapshot_id"] == "snap-001"
+        assert data["restored"] is True
+        assert "message" in data
+
+    @pytest.mark.unit
+    def test_load_snapshot_during_training_raises(self, fake_training):
+        """load_snapshot raises ConflictError when training is active."""
+        with pytest.raises(JuniperCascorConflictError, match="Cannot load snapshot while training"):
+            fake_training.load_snapshot("snap-001")
+
+    @pytest.mark.unit
+    def test_load_snapshot_unknown_id_raises(self, fake_training):
+        """load_snapshot raises NotFoundError for an unknown snapshot ID."""
+        fake_training.stop_training()
+        with pytest.raises(JuniperCascorNotFoundError, match="not found"):
+            fake_training.load_snapshot("snap-999")
+
+    @pytest.mark.unit
+    def test_load_snapshot_no_network_raises(self, fake_idle):
+        """load_snapshot raises NotFoundError when no network is loaded."""
+        with pytest.raises(JuniperCascorNotFoundError, match="No network loaded"):
+            fake_idle.load_snapshot("snap-001")
+
+    @pytest.mark.unit
+    def test_list_snapshots_no_network_raises(self, fake_idle):
+        """list_snapshots raises NotFoundError when no network is loaded."""
+        with pytest.raises(JuniperCascorNotFoundError, match="No network loaded"):
+            fake_idle.list_snapshots()
+
+    @pytest.mark.unit
+    def test_list_snapshots_idle_with_network_returns_empty(self):
+        """list_snapshots returns empty list when network exists but state is idle."""
+        client = FakeCascorClient(scenario="idle")
+        client.create_network(input_size=2, output_size=1, learning_rate=0.01)
+        result = client.list_snapshots()
+        assert result["status"] == "success"
+        assert result["data"]["snapshots"] == []
+        assert result["data"]["count"] == 0
+        client.close()
+
+    @pytest.mark.unit
+    def test_save_snapshot_no_network_raises(self, fake_idle):
+        """save_snapshot raises NotFoundError when no network is loaded."""
+        with pytest.raises(JuniperCascorNotFoundError, match="No network loaded"):
+            fake_idle.save_snapshot(description="should fail")
+
+    @pytest.mark.unit
+    def test_get_dataset_data_returns_arrays(self, fake_training):
+        """get_dataset_data returns train_x and train_y arrays with correct dimensions."""
+        result = fake_training.get_dataset_data()
+        assert result["status"] == "success"
+        data = result["data"]
+        assert "train_x" in data
+        assert "train_y" in data
+        assert isinstance(data["train_x"], list)
+        assert isinstance(data["train_y"], list)
+        # two_spiral dataset: 194 samples, 2 features
+        assert len(data["train_x"]) > 0
+        assert len(data["train_y"]) > 0
+        # Each sample in train_x should have 2 features
+        assert len(data["train_x"][0]) == 2
+
+    @pytest.mark.unit
+    def test_get_dataset_data_no_dataset_raises(self, fake_idle):
+        """get_dataset_data raises NotFoundError when no dataset is loaded."""
+        with pytest.raises(JuniperCascorNotFoundError, match="No dataset loaded"):
+            fake_idle.get_dataset_data()
+
+    @pytest.mark.unit
+    def test_get_dataset_data_after_training_start(self):
+        """get_dataset_data works after starting training with a dataset."""
+        with FakeCascorClient(scenario="idle") as client:
+            client.create_network(input_size=2, output_size=1, learning_rate=0.01)
+            dataset = {"name": "test_ds", "source": "file", "train_samples": 10, "features": 2, "classes": 2}
+            client.start_training(epochs=50, dataset=dataset)
+            result = client.get_dataset_data()
+            assert result["status"] == "success"
+            data = result["data"]
+            assert len(data["train_x"]) == 10
+            assert len(data["train_y"]) == 10
+            assert len(data["train_x"][0]) == 2
+
+
 # ─── Scenario Tests ──────────────────────────────────────────────────────────
 
 

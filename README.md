@@ -113,6 +113,25 @@ Async WebSocket client for `/ws/training`. Supports async iteration and callback
 
 Async WebSocket client for `/ws/control`. Send commands and receive responses.
 
+> **Important: WebSocket streams do not automatically reconnect.** If a connection
+> is lost (network interruption, server restart, timeout), the stream silently
+> terminates. Consumers must implement their own reconnection logic for
+> long-running training monitoring. Example pattern:
+>
+> ```python
+> import asyncio
+> from juniper_cascor_client import CascorTrainingStream
+>
+> async def resilient_stream(url, api_key):
+>     while True:
+>         try:
+>             async with CascorTrainingStream(url, api_key=api_key) as stream:
+>                 async for message in stream.stream():
+>                     process(message)
+>         except Exception:
+>             await asyncio.sleep(5)  # backoff before reconnect
+> ```
+
 ## Juniper Ecosystem
 
 This package is part of the Juniper Cascade Correlation Neural Network Research Platform.
