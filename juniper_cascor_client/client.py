@@ -12,6 +12,50 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from juniper_cascor_client.constants import (
+    API_KEY_ENV_VAR,
+    API_KEY_HEADER_NAME,
+    API_VERSION_PATH,
+    DEFAULT_BACKOFF_FACTOR,
+    DEFAULT_BASE_URL,
+    DEFAULT_DECISION_BOUNDARY_RESOLUTION,
+    DEFAULT_POOL_MAXSIZE,
+    DEFAULT_READY_POLL_INTERVAL,
+    DEFAULT_READY_TIMEOUT,
+    DEFAULT_REQUEST_TIMEOUT,
+    DEFAULT_RETRY_COUNT,
+    ENDPOINT_DATASET,
+    ENDPOINT_DATASET_DATA,
+    ENDPOINT_DECISION_BOUNDARY,
+    ENDPOINT_HEALTH,
+    ENDPOINT_HEALTH_LIVE,
+    ENDPOINT_HEALTH_READY,
+    ENDPOINT_METRICS,
+    ENDPOINT_METRICS_HISTORY,
+    ENDPOINT_NETWORK,
+    ENDPOINT_NETWORK_STATS,
+    ENDPOINT_NETWORK_TOPOLOGY,
+    ENDPOINT_SNAPSHOT_BY_ID_TEMPLATE,
+    ENDPOINT_SNAPSHOT_RESTORE_TEMPLATE,
+    ENDPOINT_SNAPSHOTS,
+    ENDPOINT_TRAINING_PARAMS,
+    ENDPOINT_TRAINING_PAUSE,
+    ENDPOINT_TRAINING_RESET,
+    ENDPOINT_TRAINING_RESUME,
+    ENDPOINT_TRAINING_START,
+    ENDPOINT_TRAINING_STATUS,
+    ENDPOINT_TRAINING_STOP,
+    ENDPOINT_WORKER_BY_ID_TEMPLATE,
+    ENDPOINT_WORKERS,
+    ENDPOINT_WORKERS_STATS,
+    HTTP_400_BAD_REQUEST,
+    HTTP_404_NOT_FOUND,
+    HTTP_409_CONFLICT,
+    HTTP_422_UNPROCESSABLE_ENTITY,
+    HTTP_503_SERVICE_UNAVAILABLE,
+    RETRY_ALLOWED_METHODS,
+    RETRYABLE_STATUS_CODES,
+)
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorTimeoutError, JuniperCascorValidationError
 
 
@@ -30,41 +74,41 @@ class JuniperCascorClient:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8200",
-        timeout: int = 30,
-        retries: int = 3,
+        base_url: str = DEFAULT_BASE_URL,
+        timeout: int = DEFAULT_REQUEST_TIMEOUT,
+        retries: int = DEFAULT_RETRY_COUNT,
         api_key: Optional[str] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.api_url = f"{self.base_url}/v1"
+        self.api_url = f"{self.base_url}{API_VERSION_PATH}"
         self.timeout = timeout
-        self.api_key = api_key or os.environ.get("JUNIPER_CASCOR_API_KEY")
+        self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR)
 
         self.session = requests.Session()
 
         retry_strategy = Retry(
             total=retries,
-            backoff_factor=0.5,
-            status_forcelist=[502, 504],
-            allowed_methods=["GET", "POST", "DELETE", "PUT", "PATCH"],
+            backoff_factor=DEFAULT_BACKOFF_FACTOR,
+            status_forcelist=RETRYABLE_STATUS_CODES,
+            allowed_methods=RETRY_ALLOWED_METHODS,
         )
-        adapter = HTTPAdapter(max_retries=retry_strategy, pool_maxsize=10)
+        adapter = HTTPAdapter(max_retries=retry_strategy, pool_maxsize=DEFAULT_POOL_MAXSIZE)
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
 
         if self.api_key:
-            self.session.headers["X-API-Key"] = self.api_key
+            self.session.headers[API_KEY_HEADER_NAME] = self.api_key
 
     # ─── Health ──────────────────────────────────────────────────────────
 
     def health_check(self) -> Dict[str, Any]:
         """Check service health."""
-        return self._get("/health")
+        return self._get(ENDPOINT_HEALTH)
 
     def is_alive(self) -> bool:
         """Check if service is alive (liveness probe)."""
         try:
-            self._get("/health/live")
+            self._get(ENDPOINT_HEALTH_LIVE)
             return True
         except (JuniperCascorClientError, ConnectionError):
             return False
@@ -72,12 +116,12 @@ class JuniperCascorClient:
     def is_ready(self) -> bool:
         """Check if service is ready to accept requests."""
         try:
-            result = self._get("/health/ready")
+            result = self._get(ENDPOINT_HEALTH_READY)
             return result.get("details", {}).get("network_loaded", False)
         except JuniperCascorClientError:
             return False
 
-    def wait_for_ready(self, timeout: float = 30.0, poll_interval: float = 0.5) -> bool:
+    def wait_for_ready(self, timeout: float = DEFAULT_READY_TIMEOUT, poll_interval: float = DEFAULT_READY_POLL_INTERVAL) -> bool:
         """Wait until service is ready or timeout expires."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -107,23 +151,23 @@ class JuniperCascorClient:
             output_epochs: Max epochs per output training.
             epochs_max: Global max epochs.
         """
-        return self._post("/network", json=kwargs)
+        return self._post(ENDPOINT_NETWORK, json=kwargs)
 
     def get_network(self) -> Dict[str, Any]:
         """Get current network state and configuration."""
-        return self._get("/network")
+        return self._get(ENDPOINT_NETWORK)
 
     def delete_network(self) -> Dict[str, Any]:
         """Destroy the current network."""
-        return self._delete("/network")
+        return self._delete(ENDPOINT_NETWORK)
 
     def get_topology(self) -> Dict[str, Any]:
         """Get network topology for visualization."""
-        return self._get("/network/topology")
+        return self._get(ENDPOINT_NETWORK_TOPOLOGY)
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get network weight statistics."""
-        return self._get("/network/stats")
+        return self._get(ENDPOINT_NETWORK_STATS)
 
     # ─── Training Control ────────────────────────────────────────────────
 
@@ -151,31 +195,31 @@ class JuniperCascorClient:
             body["inline_data"] = inline_data
         if params is not None:
             body["params"] = params
-        return self._post("/training/start", json=body)
+        return self._post(ENDPOINT_TRAINING_START, json=body)
 
     def stop_training(self) -> Dict[str, Any]:
         """Request graceful training stop."""
-        return self._post("/training/stop")
+        return self._post(ENDPOINT_TRAINING_STOP)
 
     def pause_training(self) -> Dict[str, Any]:
         """Pause training after current epoch."""
-        return self._post("/training/pause")
+        return self._post(ENDPOINT_TRAINING_PAUSE)
 
     def resume_training(self) -> Dict[str, Any]:
         """Resume paused training."""
-        return self._post("/training/resume")
+        return self._post(ENDPOINT_TRAINING_RESUME)
 
     def reset_training(self) -> Dict[str, Any]:
         """Reset network and training state."""
-        return self._post("/training/reset")
+        return self._post(ENDPOINT_TRAINING_RESET)
 
     def get_training_status(self) -> Dict[str, Any]:
         """Get current training status."""
-        return self._get("/training/status")
+        return self._get(ENDPOINT_TRAINING_STATUS)
 
     def get_training_params(self) -> Dict[str, Any]:
         """Get current training parameters."""
-        return self._get("/training/params")
+        return self._get(ENDPOINT_TRAINING_PARAMS)
 
     def update_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Update runtime-modifiable training parameters.
@@ -191,13 +235,13 @@ class JuniperCascorClient:
         Returns:
             Updated training parameters dict.
         """
-        return self._patch("/training/params", json=params)
+        return self._patch(ENDPOINT_TRAINING_PARAMS, json=params)
 
     # ─── Metrics ─────────────────────────────────────────────────────────
 
     def get_metrics(self) -> Dict[str, Any]:
         """Get current metrics snapshot."""
-        return self._get("/metrics")
+        return self._get(ENDPOINT_METRICS)
 
     def get_metrics_history(self, count: Optional[int] = None) -> Dict[str, Any]:
         """Get training metrics history.
@@ -208,31 +252,31 @@ class JuniperCascorClient:
         params = {}
         if count is not None:
             params["count"] = count
-        return self._get("/metrics/history", params=params)
+        return self._get(ENDPOINT_METRICS_HISTORY, params=params)
 
     # ─── Data ────────────────────────────────────────────────────────────
 
     def get_dataset(self) -> Dict[str, Any]:
         """Get current dataset metadata."""
-        return self._get("/dataset")
+        return self._get(ENDPOINT_DATASET)
 
     def get_dataset_data(self) -> Dict[str, Any]:
         """Get dataset arrays (train_x, train_y, optionally val_x, val_y) for visualization."""
-        return self._get("/dataset/data")
+        return self._get(ENDPOINT_DATASET_DATA)
 
-    def get_decision_boundary(self, resolution: int = 50) -> Dict[str, Any]:
+    def get_decision_boundary(self, resolution: int = DEFAULT_DECISION_BOUNDARY_RESOLUTION) -> Dict[str, Any]:
         """Get decision boundary grid data for 2D visualization.
 
         Args:
             resolution: Grid resolution (5-200, default 50).
         """
-        return self._get("/decision-boundary", params={"resolution": resolution})
+        return self._get(ENDPOINT_DECISION_BOUNDARY, params={"resolution": resolution})
 
     # ─── Snapshots ───────────────────────────────────────────────────────
 
     def list_snapshots(self) -> Dict[str, Any]:
         """List available network snapshots."""
-        return self._get("/snapshots")
+        return self._get(ENDPOINT_SNAPSHOTS)
 
     def get_snapshot(self, snapshot_id: str) -> Dict[str, Any]:
         """Get metadata for a specific snapshot.
@@ -240,7 +284,7 @@ class JuniperCascorClient:
         Args:
             snapshot_id: Snapshot identifier.
         """
-        return self._get(f"/snapshots/{snapshot_id}")
+        return self._get(ENDPOINT_SNAPSHOT_BY_ID_TEMPLATE.format(snapshot_id=snapshot_id))
 
     def save_snapshot(self, description: str = "") -> Dict[str, Any]:
         """Save current network state as a snapshot.
@@ -248,7 +292,7 @@ class JuniperCascorClient:
         Args:
             description: Optional description for the snapshot.
         """
-        return self._post("/snapshots", json={"description": description})
+        return self._post(ENDPOINT_SNAPSHOTS, json={"description": description})
 
     def load_snapshot(self, snapshot_id: str) -> Dict[str, Any]:
         """Restore network state from a snapshot.
@@ -256,13 +300,13 @@ class JuniperCascorClient:
         Args:
             snapshot_id: Snapshot identifier to restore.
         """
-        return self._post(f"/snapshots/{snapshot_id}/restore")
+        return self._post(ENDPOINT_SNAPSHOT_RESTORE_TEMPLATE.format(snapshot_id=snapshot_id))
 
     # ─── Workers ─────────────────────────────────────────────────────────
 
     def list_workers(self) -> Dict[str, Any]:
         """List all registered remote workers with status."""
-        return self._get("/workers")
+        return self._get(ENDPOINT_WORKERS)
 
     def get_worker(self, worker_id: str) -> Dict[str, Any]:
         """Get details for a specific worker.
@@ -270,11 +314,11 @@ class JuniperCascorClient:
         Args:
             worker_id: Worker identifier.
         """
-        return self._get(f"/workers/{worker_id}")
+        return self._get(ENDPOINT_WORKER_BY_ID_TEMPLATE.format(worker_id=worker_id))
 
     def get_worker_stats(self) -> Dict[str, Any]:
         """Get aggregate worker statistics."""
-        return self._get("/workers/stats")
+        return self._get(ENDPOINT_WORKERS_STATS)
 
     # ─── Context Manager ─────────────────────────────────────────────────
 
@@ -341,13 +385,13 @@ class JuniperCascorClient:
             error_msg = response.text
 
         status = response.status_code
-        if status == 400 or status == 422:
+        if status in (HTTP_400_BAD_REQUEST, HTTP_422_UNPROCESSABLE_ENTITY):
             raise JuniperCascorValidationError(error_msg)
-        elif status == 404:
+        elif status == HTTP_404_NOT_FOUND:
             raise JuniperCascorNotFoundError(error_msg)
-        elif status == 409:
+        elif status == HTTP_409_CONFLICT:
             raise JuniperCascorConflictError(error_msg)
-        elif status == 503:
+        elif status == HTTP_503_SERVICE_UNAVAILABLE:
             raise JuniperCascorServiceUnavailableError(error_msg)
         else:
             raise JuniperCascorClientError(f"HTTP {status}: {error_msg}")
