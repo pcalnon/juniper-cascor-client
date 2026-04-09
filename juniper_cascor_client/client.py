@@ -82,7 +82,7 @@ class JuniperCascorClient:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             try:
-                if self.is_alive():
+                if self.is_ready():
                     return True
             except JuniperCascorClientError:
                 pass

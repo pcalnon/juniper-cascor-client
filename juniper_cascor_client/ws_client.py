@@ -4,6 +4,7 @@ Provides async iteration over training metrics, state changes, topology
 updates, and cascade events. Also supports sending control commands.
 """
 
+import asyncio
 import json
 import os
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
@@ -160,10 +161,12 @@ class CascorControlStream:
         self,
         base_url: str = "ws://localhost:8200",
         api_key: Optional[str] = None,
+        timeout: float = 30.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or os.environ.get("JUNIPER_CASCOR_API_KEY")
         self._ws: Optional[ClientConnection] = None
+        self._timeout = timeout
 
     async def connect(self) -> None:
         """Connect to the /ws/control endpoint."""
@@ -173,9 +176,11 @@ class CascorControlStream:
             extra_headers["X-API-Key"] = self.api_key
         try:
             self._ws = await websockets.connect(url, additional_headers=extra_headers)
-            # Read the connection_established message
+            # Read and validate the connection_established message
             raw = await self._ws.recv()
-            json.loads(raw)  # Consume connection_established message
+            msg = json.loads(raw)
+            if msg.get("type") != "connection_established":
+                raise JuniperCascorClientError(f"Expected connection_established, got: {msg.get('type', 'unknown')}")
         except (OSError, websockets.exceptions.WebSocketException) as e:
             raise JuniperCascorConnectionError(f"Failed to connect to {url}: {e}") from e
 
@@ -201,7 +206,7 @@ class CascorControlStream:
         if params:
             message["params"] = params
         await self._ws.send(json.dumps(message))
-        raw = await self._ws.recv()
+        raw = await asyncio.wait_for(self._ws.recv(), timeout=self._timeout)
         return json.loads(raw)
 
     async def __aenter__(self) -> "CascorControlStream":

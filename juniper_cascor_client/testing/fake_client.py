@@ -96,17 +96,6 @@ class FakeCascorClient:
             }
             self._training_start_time = time.time() - (self._epoch * 0.5)
 
-    # ─── Response Envelope ─────────────────────────────────────────────────
-
-    @staticmethod
-    def _success_envelope(data: Any) -> Dict[str, Any]:
-        """Wrap data in a ResponseEnvelope matching the real cascor server format."""
-        return {
-            "status": "success",
-            "data": data,
-            "meta": {"timestamp": time.time(), "version": "0.4.0"},
-        }
-
     # ─── Error Injection ─────────────────────────────────────────────────
 
     def _maybe_raise_error(self, method_name: str) -> None:

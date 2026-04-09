@@ -102,8 +102,17 @@ asyncio.run(control())
 | `get_training_params()` | Training parameters |
 | `get_metrics()` | Current metrics |
 | `get_metrics_history(count)` | Metrics history |
+| `update_params(params)` | Update runtime training parameters |
 | `get_dataset()` | Dataset metadata |
+| `get_dataset_data()` | Get dataset arrays for visualization |
 | `get_decision_boundary(resolution)` | Decision boundary grid |
+| `list_snapshots()` | List saved network snapshots |
+| `get_snapshot(snapshot_id)` | Get snapshot details |
+| `save_snapshot(description)` | Save current network state |
+| `load_snapshot(snapshot_id)` | Restore network from snapshot |
+| `list_workers()` | List connected workers |
+| `get_worker(worker_id)` | Get worker details |
+| `get_worker_stats()` | Get aggregate worker statistics |
 
 ### CascorTrainingStream
 
@@ -112,6 +121,25 @@ Async WebSocket client for `/ws/training`. Supports async iteration and callback
 ### CascorControlStream
 
 Async WebSocket client for `/ws/control`. Send commands and receive responses.
+
+> **Important: WebSocket streams do not automatically reconnect.** If a connection
+> is lost (network interruption, server restart, timeout), the stream silently
+> terminates. Consumers must implement their own reconnection logic for
+> long-running training monitoring. Example pattern:
+>
+> ```python
+> import asyncio
+> from juniper_cascor_client import CascorTrainingStream
+>
+> async def resilient_stream(url, api_key):
+>     while True:
+>         try:
+>             async with CascorTrainingStream(url, api_key=api_key) as stream:
+>                 async for message in stream.stream():
+>                     process(message)
+>         except Exception:
+>             await asyncio.sleep(5)  # backoff before reconnect
+> ```
 
 ## Juniper Ecosystem
 
