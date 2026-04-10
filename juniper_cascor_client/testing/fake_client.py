@@ -17,17 +17,91 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
+from juniper_cascor_client.constants import DEFAULT_READY_POLL_INTERVAL, DEFAULT_READY_TIMEOUT
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorValidationError
+from juniper_cascor_client.testing.constants import (
+    DATASET_NAME_INLINE,
+    DATASET_SOURCE_INLINE,
+    DEFAULT_CORRELATION_THRESHOLD,
+    DEFAULT_DATASET_CLASSES,
+    DEFAULT_DATASET_FEATURES,
+    DEFAULT_DATASET_TRAIN_SAMPLES,
+    DEFAULT_INPUT_SIZE,
+    DEFAULT_LEARNING_RATE,
+    DEFAULT_MAX_EPOCHS,
+    DEFAULT_OUTPUT_SIZE,
+    DEFAULT_PATIENCE,
+    ENVELOPE_STATUS_SUCCESS,
+    ERROR_PRONE_ERROR_RATE,
+    FAKE_BASE_URL,
+    FAKE_DEFAULT_UPTIME_SECONDS,
+    FAKE_SERVICE_NAME,
+    FAKE_SERVICE_VERSION,
+    FAKE_SNAPSHOT_1_AGE_SECONDS,
+    FAKE_SNAPSHOT_1_DESCRIPTION,
+    FAKE_SNAPSHOT_1_EPOCH_OFFSET,
+    FAKE_SNAPSHOT_1_HIDDEN_UNITS,
+    FAKE_SNAPSHOT_1_ID,
+    FAKE_SNAPSHOT_2_AGE_SECONDS,
+    FAKE_SNAPSHOT_2_DESCRIPTION,
+    FAKE_SNAPSHOT_2_HIDDEN_UNITS,
+    FAKE_SNAPSHOT_2_ID,
+    FAKE_WORKER_1_CONNECTED_AGO_SECONDS,
+    FAKE_WORKER_1_CPU_CORES,
+    FAKE_WORKER_1_GPU,
+    FAKE_WORKER_1_HEALTH_SCORE,
+    FAKE_WORKER_1_HEARTBEAT_AGO_SECONDS,
+    FAKE_WORKER_1_ID,
+    FAKE_WORKER_1_PYTHON_VERSION,
+    FAKE_WORKER_1_TASKS_COMPLETED,
+    FAKE_WORKER_1_TASKS_FAILED,
+    FAKE_WORKER_2_ACTIVE_TASK_ID,
+    FAKE_WORKER_2_CONNECTED_AGO_SECONDS,
+    FAKE_WORKER_2_CPU_CORES,
+    FAKE_WORKER_2_GPU,
+    FAKE_WORKER_2_HEALTH_SCORE,
+    FAKE_WORKER_2_HEARTBEAT_AGO_SECONDS,
+    FAKE_WORKER_2_ID,
+    FAKE_WORKER_2_PYTHON_VERSION,
+    FAKE_WORKER_2_TASKS_COMPLETED,
+    FAKE_WORKER_2_TASKS_FAILED,
+    FAKE_WORKERS_AVG_HEALTH_SCORE,
+    FAKE_WORKERS_BUSY,
+    FAKE_WORKERS_IDLE,
+    FAKE_WORKERS_STALE,
+    FAKE_WORKERS_TOTAL,
+    FAKE_WORKERS_TOTAL_TASKS_COMPLETED,
+    FAKE_WORKERS_TOTAL_TASKS_FAILED,
+    FSM_PHASE_IDLE_LOWER,
+    FSM_PHASE_IDLE_UPPER,
+    FSM_PHASE_OUTPUT_LOWER,
+    FSM_PHASE_OUTPUT_UPPER,
+    FSM_STATUS_COMPLETED,
+    FSM_STATUS_IDLE,
+    FSM_STATUS_PAUSED,
+    FSM_STATUS_STARTED,
+    FSM_STATUS_STOPPED,
+    GET_PARAMS_DEFAULT_MAX_HIDDEN_UNITS,
+    NETWORK_CONFIG_CANDIDATE_POOL_SIZE,
+    SCENARIO_EMPTY,
+    SCENARIO_ERROR_PRONE,
+    SCENARIO_IDLE,
+    SNAPSHOT_ID_GENERATED_PREFIX,
+    STATE_COMPLETE,
+    STATE_IDLE,
+    STATE_PAUSED,
+    STATE_TRAINING,
+    VALID_STATES,
+)
 from juniper_cascor_client.testing.scenarios import SCENARIO_DEFAULTS, build_cascor_topology, build_network_config, generate_dataset_inputs, generate_dataset_targets, generate_decision_boundary, generate_metrics_snapshot, generate_weight_statistics, get_scenario_data
 
-# Valid training states and allowed transitions
-VALID_STATES = {"idle", "training", "paused", "complete"}
-
+# State transitions allowed by FakeCascorClient. Keys reference the same
+# canonical STATE_* identifiers used everywhere else in this module.
 STATE_TRANSITIONS = {
-    "idle": {"training"},
-    "training": {"paused", "complete", "idle"},
-    "paused": {"training", "idle"},
-    "complete": {"idle"},
+    STATE_IDLE: {STATE_TRAINING},
+    STATE_TRAINING: {STATE_PAUSED, STATE_COMPLETE, STATE_IDLE},
+    STATE_PAUSED: {STATE_TRAINING, STATE_IDLE},
+    STATE_COMPLETE: {STATE_IDLE},
 }
 
 
@@ -59,8 +133,8 @@ class FakeCascorClient:
 
     def __init__(
         self,
-        scenario: str = "idle",
-        base_url: str = "http://fake-cascor:8200",
+        scenario: str = SCENARIO_IDLE,
+        base_url: str = FAKE_BASE_URL,
         api_key: Optional[str] = None,
     ) -> None:
         self._lock = threading.Lock()
@@ -88,9 +162,9 @@ class FakeCascorClient:
                 self._metrics_history.append(generate_metrics_snapshot(e, self._scenario))
 
         # Set training params for active scenarios
-        if self._state in ("training", "paused"):
+        if self._state in (STATE_TRAINING, STATE_PAUSED):
             self._training_params = {
-                "epochs": self._network_config.get("epochs_max", 1000) if self._network_config else 1000,
+                "epochs": self._network_config.get("epochs_max", DEFAULT_MAX_EPOCHS) if self._network_config else DEFAULT_MAX_EPOCHS,
                 "dataset": self._dataset,
                 "params": copy.deepcopy(self._network_config) if self._network_config else {},
             }
@@ -101,12 +175,13 @@ class FakeCascorClient:
     def _maybe_raise_error(self, method_name: str) -> None:
         """Conditionally raise an exception for the error_prone scenario.
 
-        Uses random.random() < 0.1 to decide. Cycles through different
-        exception types based on a hash of the method name for variety.
+        Uses ``random.random() < ERROR_PRONE_ERROR_RATE`` to decide. Cycles
+        through different exception types based on a hash of the method name
+        for variety.
         """
-        if self._scenario != "error_prone":
+        if self._scenario != SCENARIO_ERROR_PRONE:
             return
-        if random.random() >= 0.1:
+        if random.random() >= ERROR_PRONE_ERROR_RATE:
             return
 
         # Cycle through exception types for variety
@@ -128,9 +203,9 @@ class FakeCascorClient:
     def _success_envelope(data: Any) -> Dict[str, Any]:
         """Build a ResponseEnvelope matching the real cascor server format."""
         return {
-            "status": "success",
+            "status": ENVELOPE_STATUS_SUCCESS,
             "data": data,
-            "meta": {"timestamp": time.time(), "version": "0.4.0"},
+            "meta": {"timestamp": time.time(), "version": FAKE_SERVICE_VERSION},
         }
 
     # ─── Health ──────────────────────────────────────────────────────────
@@ -142,9 +217,9 @@ class FakeCascorClient:
             self._maybe_raise_error("health_check")
             return self._success_envelope(
                 {
-                    "service": "juniper-cascor",
-                    "version": "0.4.0",
-                    "uptime_seconds": 3600.0,
+                    "service": FAKE_SERVICE_NAME,
+                    "version": FAKE_SERVICE_VERSION,
+                    "uptime_seconds": FAKE_DEFAULT_UPTIME_SECONDS,
                     "network_loaded": self._network_loaded,
                     "training_state": self._state,
                 }
@@ -172,7 +247,7 @@ class FakeCascorClient:
                 return False
             return self._network_loaded
 
-    def wait_for_ready(self, timeout: float = 30.0, poll_interval: float = 0.5) -> bool:
+    def wait_for_ready(self, timeout: float = DEFAULT_READY_TIMEOUT, poll_interval: float = DEFAULT_READY_POLL_INTERVAL) -> bool:
         """Wait until service is ready or timeout expires.
 
         For the fake client, this returns immediately based on current state
@@ -208,12 +283,12 @@ class FakeCascorClient:
             # Validate required fields
             required = ["input_size", "output_size", "learning_rate"]
             missing = [f for f in required if f not in kwargs]
-            if missing and self._scenario != "empty":
+            if missing and self._scenario != SCENARIO_EMPTY:
                 raise JuniperCascorValidationError(f"Missing required fields: {', '.join(missing)}")
 
-            input_size = kwargs.get("input_size", 2)
-            output_size = kwargs.get("output_size", 1)
-            learning_rate = kwargs.get("learning_rate", 0.01)
+            input_size = kwargs.get("input_size", DEFAULT_INPUT_SIZE)
+            output_size = kwargs.get("output_size", DEFAULT_OUTPUT_SIZE)
+            learning_rate = kwargs.get("learning_rate", DEFAULT_LEARNING_RATE)
 
             self._network_config = build_network_config(
                 input_size=input_size,
@@ -227,7 +302,7 @@ class FakeCascorClient:
                 hidden_units=0,
             )
             self._network_loaded = True
-            self._state = "idle"
+            self._state = STATE_IDLE
             self._epoch = 0
             self._metrics_history = []
 
@@ -265,14 +340,14 @@ class FakeCascorClient:
             if not self._network_loaded:
                 raise JuniperCascorNotFoundError("No network loaded.")
 
-            if self._state == "training":
+            if self._state == STATE_TRAINING:
                 raise JuniperCascorConflictError("Cannot delete network while training is active. Stop training first.")
 
             self._network_config = None
             self._topology = None
             self._dataset = None
             self._network_loaded = False
-            self._state = "idle"
+            self._state = STATE_IDLE
             self._epoch = 0
             self._metrics_history = []
             self._training_params = None
@@ -333,15 +408,15 @@ class FakeCascorClient:
             if not self._network_loaded:
                 raise JuniperCascorNotFoundError("No network loaded. Create a network first.")
 
-            if self._state == "training":
+            if self._state == STATE_TRAINING:
                 raise JuniperCascorConflictError("Training is already in progress.")
 
-            if self._state == "paused":
+            if self._state == STATE_PAUSED:
                 raise JuniperCascorConflictError("Training is paused. Resume or reset before starting new training.")
 
             # Store training params
             self._training_params = {
-                "epochs": epochs or (self._network_config.get("epochs_max", 1000) if self._network_config else 1000),
+                "epochs": epochs or (self._network_config.get("epochs_max", DEFAULT_MAX_EPOCHS) if self._network_config else DEFAULT_MAX_EPOCHS),
                 "dataset": dataset or inline_data or self._dataset,
                 "params": params or {},
             }
@@ -351,20 +426,20 @@ class FakeCascorClient:
                 self._dataset = copy.deepcopy(dataset)
             elif inline_data is not None:
                 self._dataset = {
-                    "name": "inline",
-                    "source": "inline",
+                    "name": DATASET_NAME_INLINE,
+                    "source": DATASET_SOURCE_INLINE,
                     "samples": len(inline_data.get("train_x", [])),
                     "features": len(inline_data.get("train_x", [[]])[0]) if inline_data.get("train_x") else 0,
                 }
 
-            self._state = "training"
+            self._state = STATE_TRAINING
             self._epoch = 0
             self._metrics_history = []
             self._training_start_time = time.time()
 
             return self._success_envelope(
                 {
-                    "state": "training",
+                    "state": STATE_TRAINING,
                     "epochs": self._training_params["epochs"],
                     "message": "Training started.",
                 }
@@ -376,14 +451,14 @@ class FakeCascorClient:
             self._check_closed()
             self._maybe_raise_error("stop_training")
 
-            if self._state not in ("training", "paused"):
+            if self._state not in (STATE_TRAINING, STATE_PAUSED):
                 raise JuniperCascorConflictError(f"Cannot stop training in state '{self._state}'.")
 
-            self._state = "idle"
+            self._state = STATE_IDLE
 
             return self._success_envelope(
                 {
-                    "state": "idle",
+                    "state": STATE_IDLE,
                     "final_epoch": self._epoch,
                     "message": "Training stopped.",
                 }
@@ -395,14 +470,14 @@ class FakeCascorClient:
             self._check_closed()
             self._maybe_raise_error("pause_training")
 
-            if self._state != "training":
+            if self._state != STATE_TRAINING:
                 raise JuniperCascorConflictError(f"Cannot pause training in state '{self._state}'.")
 
-            self._state = "paused"
+            self._state = STATE_PAUSED
 
             return self._success_envelope(
                 {
-                    "state": "paused",
+                    "state": STATE_PAUSED,
                     "epoch": self._epoch,
                     "message": "Training paused.",
                 }
@@ -414,14 +489,14 @@ class FakeCascorClient:
             self._check_closed()
             self._maybe_raise_error("resume_training")
 
-            if self._state != "paused":
+            if self._state != STATE_PAUSED:
                 raise JuniperCascorConflictError(f"Cannot resume training in state '{self._state}'.")
 
-            self._state = "training"
+            self._state = STATE_TRAINING
 
             return self._success_envelope(
                 {
-                    "state": "training",
+                    "state": STATE_TRAINING,
                     "epoch": self._epoch,
                     "message": "Training resumed.",
                 }
@@ -439,12 +514,12 @@ class FakeCascorClient:
             # Reset to initial topology (no hidden units)
             if self._network_config:
                 self._topology = build_cascor_topology(
-                    input_size=self._network_config.get("input_size", 2),
-                    output_size=self._network_config.get("output_size", 1),
+                    input_size=self._network_config.get("input_size", DEFAULT_INPUT_SIZE),
+                    output_size=self._network_config.get("output_size", DEFAULT_OUTPUT_SIZE),
                     hidden_units=0,
                 )
 
-            self._state = "idle"
+            self._state = STATE_IDLE
             self._epoch = 0
             self._metrics_history = []
             self._training_params = None
@@ -452,25 +527,25 @@ class FakeCascorClient:
 
             return self._success_envelope(
                 {
-                    "state": "idle",
+                    "state": STATE_IDLE,
                     "message": "Training reset.",
                 }
             )
 
     # FSM state mapping: internal state -> cascor state_machine.status
     _STATE_TO_FSM = {
-        "idle": "STOPPED",
-        "training": "STARTED",
-        "paused": "PAUSED",
-        "complete": "COMPLETED",
+        STATE_IDLE: FSM_STATUS_STOPPED,
+        STATE_TRAINING: FSM_STATUS_STARTED,
+        STATE_PAUSED: FSM_STATUS_PAUSED,
+        STATE_COMPLETE: FSM_STATUS_COMPLETED,
     }
 
     # Phase mapping: internal state -> cascor state_machine.phase
     _STATE_TO_PHASE = {
-        "idle": "IDLE",
-        "training": "OUTPUT",
-        "paused": "OUTPUT",
-        "complete": "IDLE",
+        STATE_IDLE: FSM_PHASE_IDLE_UPPER,
+        STATE_TRAINING: FSM_PHASE_OUTPUT_UPPER,
+        STATE_PAUSED: FSM_PHASE_OUTPUT_UPPER,
+        STATE_COMPLETE: FSM_PHASE_IDLE_UPPER,
     }
 
     def get_training_status(self) -> Dict[str, Any]:
@@ -487,9 +562,9 @@ class FakeCascorClient:
             if self._training_start_time is not None:
                 elapsed = round(time.time() - self._training_start_time, 2)
 
-            max_epochs = 1000
+            max_epochs = DEFAULT_MAX_EPOCHS
             if self._training_params:
-                max_epochs = self._training_params.get("epochs", 1000)
+                max_epochs = self._training_params.get("epochs", DEFAULT_MAX_EPOCHS)
 
             progress = round(self._epoch / max_epochs, 4) if max_epochs > 0 else 0.0
 
@@ -497,34 +572,34 @@ class FakeCascorClient:
 
             # Map internal state to cascor server state machine status
             status_map = {
-                "training": "STARTED",
-                "paused": "PAUSED",
-                "complete": "COMPLETED",
-                "idle": "IDLE",
+                STATE_TRAINING: FSM_STATUS_STARTED,
+                STATE_PAUSED: FSM_STATUS_PAUSED,
+                STATE_COMPLETE: FSM_STATUS_COMPLETED,
+                STATE_IDLE: FSM_STATUS_IDLE,
             }
-            phase = "output" if self._state == "training" else "idle"
+            phase = FSM_PHASE_OUTPUT_LOWER if self._state == STATE_TRAINING else FSM_PHASE_IDLE_LOWER
             hidden_units = self._topology.get("hidden_units", 0) if self._topology else 0
 
             return self._success_envelope(
                 {
                     "state_machine": {
-                        "status": status_map.get(self._state, "IDLE"),
+                        "status": status_map.get(self._state, FSM_STATUS_IDLE),
                         "phase": phase,
                     },
                     "monitor": {
-                        "is_training": self._state == "training",
+                        "is_training": self._state == STATE_TRAINING,
                         "current_epoch": self._epoch,
                         "current_hidden_units": hidden_units,
                         "total_metrics": len(self._metrics_history),
                     },
                     "training_state": {
-                        "learning_rate": config.get("learning_rate", 0.01),
-                        "max_hidden_units": config.get("max_hidden_units", 10),
+                        "learning_rate": config.get("learning_rate", DEFAULT_LEARNING_RATE),
+                        "max_hidden_units": config.get("max_hidden_units", GET_PARAMS_DEFAULT_MAX_HIDDEN_UNITS),
                         "max_epochs": max_epochs,
                         "progress": min(progress, 1.0),
                         "elapsed_seconds": elapsed,
                     },
-                    "training_active": self._state == "training",
+                    "training_active": self._state == STATE_TRAINING,
                     "network_loaded": self._network_loaded,
                 }
             )
@@ -544,12 +619,12 @@ class FakeCascorClient:
 
             return self._success_envelope(
                 {
-                    "learning_rate": config.get("learning_rate", 0.01),
-                    "max_hidden_units": config.get("max_hidden_units", 10),
-                    "epochs_max": config.get("epochs_max", 1000),
-                    "patience": config.get("patience", 10),
-                    "candidate_pool_size": config.get("candidate_pool_size", 8),
-                    "correlation_threshold": config.get("correlation_threshold", 0.01),
+                    "learning_rate": config.get("learning_rate", DEFAULT_LEARNING_RATE),
+                    "max_hidden_units": config.get("max_hidden_units", GET_PARAMS_DEFAULT_MAX_HIDDEN_UNITS),
+                    "epochs_max": config.get("epochs_max", DEFAULT_MAX_EPOCHS),
+                    "patience": config.get("patience", DEFAULT_PATIENCE),
+                    "candidate_pool_size": config.get("candidate_pool_size", NETWORK_CONFIG_CANDIDATE_POOL_SIZE),
+                    "correlation_threshold": config.get("correlation_threshold", DEFAULT_CORRELATION_THRESHOLD),
                 }
             )
 
@@ -666,9 +741,9 @@ class FakeCascorClient:
             if self._dataset is None:
                 raise JuniperCascorNotFoundError("No dataset loaded.")
 
-            samples = self._dataset.get("train_samples", 4)
-            features = self._dataset.get("features", 2)
-            classes = self._dataset.get("classes", 2)
+            samples = self._dataset.get("train_samples", DEFAULT_DATASET_TRAIN_SAMPLES)
+            features = self._dataset.get("features", DEFAULT_DATASET_FEATURES)
+            classes = self._dataset.get("classes", DEFAULT_DATASET_CLASSES)
             train_x = generate_dataset_inputs(samples, features)
             train_y = generate_dataset_targets(samples, classes)
             return self._success_envelope({"train_x": train_x, "train_y": train_y})
@@ -693,7 +768,7 @@ class FakeCascorClient:
             if resolution < 5 or resolution > 200:
                 raise JuniperCascorValidationError(f"Resolution must be between 5 and 200, got {resolution}.")
 
-            input_size = self._network_config.get("input_size", 2) if self._network_config else 2
+            input_size = self._network_config.get("input_size", DEFAULT_INPUT_SIZE) if self._network_config else DEFAULT_INPUT_SIZE
             hidden_units = self._topology.get("hidden_units", 0) if self._topology else 0
             boundary = generate_decision_boundary(
                 input_size=input_size,
@@ -715,21 +790,21 @@ class FakeCascorClient:
                 raise JuniperCascorNotFoundError("No network loaded.")
 
             snapshots: List[Dict[str, Any]] = []
-            if self._state in ("training", "paused", "complete"):
+            if self._state in (STATE_TRAINING, STATE_PAUSED, STATE_COMPLETE):
                 snapshots = [
                     {
-                        "snapshot_id": "snap-001",
-                        "description": "Before candidate installation",
-                        "epoch": max(0, self._epoch - 5),
-                        "hidden_units": 0,
-                        "created_at": time.time() - 300,
+                        "snapshot_id": FAKE_SNAPSHOT_1_ID,
+                        "description": FAKE_SNAPSHOT_1_DESCRIPTION,
+                        "epoch": max(0, self._epoch - FAKE_SNAPSHOT_1_EPOCH_OFFSET),
+                        "hidden_units": FAKE_SNAPSHOT_1_HIDDEN_UNITS,
+                        "created_at": time.time() - FAKE_SNAPSHOT_1_AGE_SECONDS,
                     },
                     {
-                        "snapshot_id": "snap-002",
-                        "description": "After first hidden unit",
+                        "snapshot_id": FAKE_SNAPSHOT_2_ID,
+                        "description": FAKE_SNAPSHOT_2_DESCRIPTION,
                         "epoch": self._epoch,
-                        "hidden_units": 1,
-                        "created_at": time.time() - 60,
+                        "hidden_units": FAKE_SNAPSHOT_2_HIDDEN_UNITS,
+                        "created_at": time.time() - FAKE_SNAPSHOT_2_AGE_SECONDS,
                     },
                 ]
 
@@ -752,12 +827,12 @@ class FakeCascorClient:
                 raise JuniperCascorNotFoundError("No network loaded.")
 
             # Only recognize the two fake snapshot IDs
-            if snapshot_id not in ("snap-001", "snap-002"):
+            if snapshot_id not in (FAKE_SNAPSHOT_1_ID, FAKE_SNAPSHOT_2_ID):
                 raise JuniperCascorNotFoundError(f"Snapshot '{snapshot_id}' not found.")
 
-            epoch = max(0, self._epoch - 5) if snapshot_id == "snap-001" else self._epoch
-            hidden = 0 if snapshot_id == "snap-001" else 1
-            desc = "Before candidate installation" if snapshot_id == "snap-001" else "After first hidden unit"
+            epoch = max(0, self._epoch - FAKE_SNAPSHOT_1_EPOCH_OFFSET) if snapshot_id == FAKE_SNAPSHOT_1_ID else self._epoch
+            hidden = FAKE_SNAPSHOT_1_HIDDEN_UNITS if snapshot_id == FAKE_SNAPSHOT_1_ID else FAKE_SNAPSHOT_2_HIDDEN_UNITS
+            desc = FAKE_SNAPSHOT_1_DESCRIPTION if snapshot_id == FAKE_SNAPSHOT_1_ID else FAKE_SNAPSHOT_2_DESCRIPTION
 
             return self._success_envelope(
                 {
@@ -765,7 +840,7 @@ class FakeCascorClient:
                     "description": desc,
                     "epoch": epoch,
                     "hidden_units": hidden,
-                    "created_at": time.time() - (300 if snapshot_id == "snap-001" else 60),
+                    "created_at": time.time() - (FAKE_SNAPSHOT_1_AGE_SECONDS if snapshot_id == FAKE_SNAPSHOT_1_ID else FAKE_SNAPSHOT_2_AGE_SECONDS),
                     "network_config": copy.deepcopy(self._network_config),
                 }
             )
@@ -786,7 +861,7 @@ class FakeCascorClient:
             if not self._network_loaded:
                 raise JuniperCascorNotFoundError("No network loaded.")
 
-            snapshot_id = f"snap-{int(time.time())}"
+            snapshot_id = f"{SNAPSHOT_ID_GENERATED_PREFIX}{int(time.time())}"
             hidden_units = self._topology.get("hidden_units", 0) if self._topology else 0
 
             return self._success_envelope(
@@ -817,10 +892,10 @@ class FakeCascorClient:
             if not self._network_loaded:
                 raise JuniperCascorNotFoundError("No network loaded.")
 
-            if self._state == "training":
+            if self._state == STATE_TRAINING:
                 raise JuniperCascorConflictError("Cannot load snapshot while training is active. Stop training first.")
 
-            if snapshot_id not in ("snap-001", "snap-002"):
+            if snapshot_id not in (FAKE_SNAPSHOT_1_ID, FAKE_SNAPSHOT_2_ID):
                 raise JuniperCascorNotFoundError(f"Snapshot '{snapshot_id}' not found.")
 
             return self._success_envelope(
@@ -841,25 +916,25 @@ class FakeCascorClient:
 
             workers = [
                 {
-                    "worker_id": "worker-demo-01",
-                    "capabilities": {"cpu_cores": 8, "gpu": False, "python": "3.13"},
-                    "connected_at": time.time() - 600,
-                    "last_heartbeat": time.time() - 2,
-                    "tasks_completed": 12,
-                    "tasks_failed": 0,
+                    "worker_id": FAKE_WORKER_1_ID,
+                    "capabilities": {"cpu_cores": FAKE_WORKER_1_CPU_CORES, "gpu": FAKE_WORKER_1_GPU, "python": FAKE_WORKER_1_PYTHON_VERSION},
+                    "connected_at": time.time() - FAKE_WORKER_1_CONNECTED_AGO_SECONDS,
+                    "last_heartbeat": time.time() - FAKE_WORKER_1_HEARTBEAT_AGO_SECONDS,
+                    "tasks_completed": FAKE_WORKER_1_TASKS_COMPLETED,
+                    "tasks_failed": FAKE_WORKER_1_TASKS_FAILED,
                     "active_task_id": None,
-                    "health_score": 1.0,
+                    "health_score": FAKE_WORKER_1_HEALTH_SCORE,
                     "idle": True,
                 },
                 {
-                    "worker_id": "worker-demo-02",
-                    "capabilities": {"cpu_cores": 4, "gpu": True, "python": "3.13"},
-                    "connected_at": time.time() - 300,
-                    "last_heartbeat": time.time() - 1,
-                    "tasks_completed": 8,
-                    "tasks_failed": 1,
-                    "active_task_id": "task-abc",
-                    "health_score": 0.8889,
+                    "worker_id": FAKE_WORKER_2_ID,
+                    "capabilities": {"cpu_cores": FAKE_WORKER_2_CPU_CORES, "gpu": FAKE_WORKER_2_GPU, "python": FAKE_WORKER_2_PYTHON_VERSION},
+                    "connected_at": time.time() - FAKE_WORKER_2_CONNECTED_AGO_SECONDS,
+                    "last_heartbeat": time.time() - FAKE_WORKER_2_HEARTBEAT_AGO_SECONDS,
+                    "tasks_completed": FAKE_WORKER_2_TASKS_COMPLETED,
+                    "tasks_failed": FAKE_WORKER_2_TASKS_FAILED,
+                    "active_task_id": FAKE_WORKER_2_ACTIVE_TASK_ID,
+                    "health_score": FAKE_WORKER_2_HEALTH_SCORE,
                     "idle": False,
                 },
             ]
@@ -878,21 +953,25 @@ class FakeCascorClient:
             self._check_closed()
             self._maybe_raise_error("get_worker")
 
-            known = {"worker-demo-01", "worker-demo-02"}
+            known = {FAKE_WORKER_1_ID, FAKE_WORKER_2_ID}
             if worker_id not in known:
                 raise JuniperCascorNotFoundError(f"Worker '{worker_id}' not found")
 
-            is_first = worker_id == "worker-demo-01"
+            is_first = worker_id == FAKE_WORKER_1_ID
             return self._success_envelope(
                 {
                     "worker_id": worker_id,
-                    "capabilities": {"cpu_cores": 8 if is_first else 4, "gpu": not is_first, "python": "3.13"},
-                    "connected_at": time.time() - (600 if is_first else 300),
-                    "last_heartbeat": time.time() - (2 if is_first else 1),
-                    "tasks_completed": 12 if is_first else 8,
-                    "tasks_failed": 0 if is_first else 1,
-                    "active_task_id": None if is_first else "task-abc",
-                    "health_score": 1.0 if is_first else 0.8889,
+                    "capabilities": {
+                        "cpu_cores": FAKE_WORKER_1_CPU_CORES if is_first else FAKE_WORKER_2_CPU_CORES,
+                        "gpu": FAKE_WORKER_1_GPU if is_first else FAKE_WORKER_2_GPU,
+                        "python": FAKE_WORKER_1_PYTHON_VERSION if is_first else FAKE_WORKER_2_PYTHON_VERSION,
+                    },
+                    "connected_at": time.time() - (FAKE_WORKER_1_CONNECTED_AGO_SECONDS if is_first else FAKE_WORKER_2_CONNECTED_AGO_SECONDS),
+                    "last_heartbeat": time.time() - (FAKE_WORKER_1_HEARTBEAT_AGO_SECONDS if is_first else FAKE_WORKER_2_HEARTBEAT_AGO_SECONDS),
+                    "tasks_completed": FAKE_WORKER_1_TASKS_COMPLETED if is_first else FAKE_WORKER_2_TASKS_COMPLETED,
+                    "tasks_failed": FAKE_WORKER_1_TASKS_FAILED if is_first else FAKE_WORKER_2_TASKS_FAILED,
+                    "active_task_id": None if is_first else FAKE_WORKER_2_ACTIVE_TASK_ID,
+                    "health_score": FAKE_WORKER_1_HEALTH_SCORE if is_first else FAKE_WORKER_2_HEALTH_SCORE,
                     "idle": is_first,
                 }
             )
@@ -905,13 +984,13 @@ class FakeCascorClient:
 
             return self._success_envelope(
                 {
-                    "total": 2,
-                    "idle": 1,
-                    "busy": 1,
-                    "stale": 0,
-                    "total_tasks_completed": 20,
-                    "total_tasks_failed": 1,
-                    "average_health_score": 0.9444,
+                    "total": FAKE_WORKERS_TOTAL,
+                    "idle": FAKE_WORKERS_IDLE,
+                    "busy": FAKE_WORKERS_BUSY,
+                    "stale": FAKE_WORKERS_STALE,
+                    "total_tasks_completed": FAKE_WORKERS_TOTAL_TASKS_COMPLETED,
+                    "total_tasks_failed": FAKE_WORKERS_TOTAL_TASKS_FAILED,
+                    "average_health_score": FAKE_WORKERS_AVG_HEALTH_SCORE,
                     "timestamp": time.time(),
                 }
             )
@@ -945,12 +1024,12 @@ class FakeCascorClient:
             JuniperCascorConflictError: If training is not active.
         """
         with self._lock:
-            if self._state not in ("training", "paused"):
+            if self._state not in (STATE_TRAINING, STATE_PAUSED):
                 raise JuniperCascorConflictError(f"Cannot advance epoch in state '{self._state}'. Must be 'training' or 'paused'.")
 
-            max_epochs = 1000
+            max_epochs = DEFAULT_MAX_EPOCHS
             if self._training_params:
-                max_epochs = self._training_params.get("epochs", 1000)
+                max_epochs = self._training_params.get("epochs", DEFAULT_MAX_EPOCHS)
 
             for _ in range(n):
                 self._epoch += 1
@@ -960,8 +1039,8 @@ class FakeCascorClient:
                 # Update topology when hidden units increase
                 new_hidden = snapshot.get("hidden_units", 0)
                 if self._topology and new_hidden > self._topology.get("hidden_units", 0):
-                    input_size = self._network_config.get("input_size", 2) if self._network_config else 2
-                    output_size = self._network_config.get("output_size", 1) if self._network_config else 1
+                    input_size = self._network_config.get("input_size", DEFAULT_INPUT_SIZE) if self._network_config else DEFAULT_INPUT_SIZE
+                    output_size = self._network_config.get("output_size", DEFAULT_OUTPUT_SIZE) if self._network_config else DEFAULT_OUTPUT_SIZE
                     self._topology = build_cascor_topology(
                         input_size=input_size,
                         output_size=output_size,
@@ -970,7 +1049,7 @@ class FakeCascorClient:
 
                 # Check if training is complete
                 if self._epoch >= max_epochs:
-                    self._state = "complete"
+                    self._state = STATE_COMPLETE
                     break
 
     def set_state(self, state: str) -> None:
