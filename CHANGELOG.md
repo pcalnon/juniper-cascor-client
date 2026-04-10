@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Serena code agent integration configuration (`.serena/project.yml`)
+- New `juniper_cascor_client/constants.py` module centralizing wire-protocol identifiers (`API_KEY_*`, `API_VERSION_*`), the full set of REST `ENDPOINT_*` paths, WebSocket `WS_*_PATH` constants, `DEFAULT_*` constructor defaults, `MSG_TYPE_*` discriminators bit-identical to the cascor server's `MessageType` enum, and scenario/fake-client defaults.
+
+### Changed
+
+- `client.py`, `ws_client.py`, `testing/fake_client.py`, and `testing/scenarios.py` now import from `juniper_cascor_client.constants` instead of embedding inline literals (~200 replacements total across REST + WebSocket + testing utilities).
+- `MSG_TYPE_*` values are guaranteed to remain bit-identical to the `juniper-cascor` server's `MessageType(StrEnum)` and to the matching constants in `juniper-cascor-worker` — verified by Wave 5 cross-repo alignment checks.
+- `AGENTS.md` gained a new "Constants" section documenting the categories, server alignment, and contribution rules.
+
+### Notes
+
+- No public API changes; constructor signatures, method behavior, and exception types are unchanged.
+- All 223 existing tests pass without modification; pre-commit (22 hooks) is clean.
 
 ## [0.3.0] - 2026-03-30
 
