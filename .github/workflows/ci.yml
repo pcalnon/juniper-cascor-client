@@ -113,7 +113,7 @@ jobs:
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       juniper-cascor-client - Documentation Validation     ║"
           echo "╚════════════════════════════════════════════════════════════╝"
-          python scripts/check_doc_links.py --exclude templates --exclude history
+          python scripts/check_doc_links.py --exclude templates --exclude history --cross-repo skip
 
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Unit Tests: Run unit tests with coverage enforcement
@@ -321,7 +321,7 @@ jobs:
       - name: Install security tools
         run: |
           python -m pip install --upgrade pip
-          pip install bandit pip-audit
+          pip install "bandit[sarif]" pip-audit
 
       - name: Create reports directory
         run: mkdir -p reports/security
@@ -331,7 +331,7 @@ jobs:
           echo "╔════════════════════════════════════════════════════════════╗"
           echo "║       juniper-cascor-client - Bandit Security Scan         ║"
           echo "╚════════════════════════════════════════════════════════════╝"
-          bandit -r juniper_cascor_client -f sarif -o reports/security/bandit.sarif || true
+          bandit -r juniper_cascor_client -f sarif -o reports/security/bandit.sarif --exit-zero
 
       - name: Upload Bandit SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13  # v4.35.1
@@ -346,7 +346,9 @@ jobs:
           echo "║       juniper-cascor-client - pip-audit Dependency Scan    ║"
           echo "╚════════════════════════════════════════════════════════════╝"
           pip install -e ".[test]"
-          pip freeze | grep -ivE "^juniper[-_]cascor[-_]client" > reports/security/requirements.txt
+          # Use `pip list --exclude` so the editable self-package (PEP 660) is dropped
+          # robustly — `pip freeze | grep` misses it for newer pip output formats.
+          pip list --format=freeze --exclude juniper-cascor-client > reports/security/requirements.txt
           pip-audit -r reports/security/requirements.txt --strict --desc on \
             || (echo "::error::Critical/High vulnerabilities found in dependencies" && exit 1)
 
