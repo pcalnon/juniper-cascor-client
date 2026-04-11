@@ -187,6 +187,7 @@ juniper-cascor-client/
 ├── juniper_cascor_client/           # Main package
 │   ├── __init__.py                  # Public API exports, version (0.3.0)
 │   ├── client.py                    # JuniperCascorClient (REST, 353 lines)
+│   ├── constants.py                 # Endpoint paths, header names, defaults, scenario constants
 │   ├── ws_client.py                 # CascorTrainingStream, CascorControlStream (212 lines)
 │   ├── exceptions.py                # Exception hierarchy (43 lines)
 │   ├── py.typed                     # PEP 561 marker
@@ -251,6 +252,36 @@ juniper-cascor-client/
 | `CASCOR_SERVICE_URL` | Consumers (juniper-canopy, juniper-deploy) | Service URL override | `http://localhost:8200` |
 
 Template: `.env.example`
+
+---
+
+## Constants
+
+Every previously inline literal in `client.py`, `ws_client.py`, `testing/fake_client.py`, and `testing/scenarios.py` is now centralized in `juniper_cascor_client/constants.py`. Application code imports from this module rather than embedding literals.
+
+### Categories
+
+| Prefix / Group | Examples | Purpose |
+|----------------|----------|---------|
+| `API_KEY_*`, `API_VERSION_*` | `API_KEY_HEADER_NAME='X-API-Key'`, `API_KEY_ENV_VAR='JUNIPER_CASCOR_API_KEY'`, `API_VERSION_PATH='/v1'` | Wire-protocol identifiers shared with the `juniper-cascor` server |
+| `ENDPOINT_*`, `WS_*_PATH` | `ENDPOINT_TRAINING_START='/training/start'`, `ENDPOINT_NETWORK_TOPOLOGY='/network/topology'`, `WS_TRAINING_PATH='/ws/training'` | Relative paths under each FastAPI router (server prefix + this constant = full URL) |
+| `DEFAULT_*` | `DEFAULT_BASE_URL='http://localhost:8200'`, `DEFAULT_TIMEOUT_SECONDS`, `DEFAULT_BACKOFF_FACTOR=0.5` | Constructor defaults for `JuniperCascorClient` and `CascorTrainingStream` / `CascorControlStream` |
+| `MSG_TYPE_*` | `MSG_TYPE_HEARTBEAT='heartbeat'`, `MSG_TYPE_REGISTRATION_ACK` | WebSocket message-type discriminators (must remain bit-identical to the server's `MessageType` enum) |
+| Scenario / generator defaults | `SCENARIO_*`, fake-client tuning | Default values used by `testing/fake_client.py` and `testing/scenarios.py` to keep fakes deterministic |
+
+### Alignment with `juniper-cascor`
+
+- `API_KEY_HEADER_NAME` matches the literal `"X-API-Key"` checked by `juniper-cascor/src/api/security.py`.
+- All `ENDPOINT_*` paths equal the relative routes declared on the corresponding `APIRouter` in `juniper-cascor/src/api/routes/`.
+- `MSG_TYPE_*` values are bit-identical to the cascor server's `MessageType(StrEnum)` in `src/api/workers/protocol.py`. Wave 5 verified this with a programmatic comparison and the cascor-worker package shares the same set under `MSG_TYPE_*` names.
+
+### Modifying
+
+When the cascor server adds or renames an endpoint, header, or wire-protocol message type:
+
+1. Update the constant in `constants.py` first (with a docstring noting cross-repo coupling)
+2. Update the corresponding consumer in `client.py` / `ws_client.py` / `testing/`
+3. Run the cross-repo alignment check from the project roadmap before merging
 
 ---
 

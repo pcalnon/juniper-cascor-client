@@ -12,6 +12,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 import websockets
 from websockets.asyncio.client import ClientConnection
 
+from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_WS_BASE_URL, WS_CONTROL_PATH, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_TRAINING_PATH
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConnectionError
 
 
@@ -35,15 +36,15 @@ class CascorTrainingStream:
 
     def __init__(
         self,
-        base_url: str = "ws://localhost:8200",
+        base_url: str = DEFAULT_WS_BASE_URL,
         api_key: Optional[str] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key or os.environ.get("JUNIPER_CASCOR_API_KEY")
+        self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR)
         self._ws: Optional[ClientConnection] = None
         self._callbacks: Dict[str, List[Callable[[Dict[str, Any]], None]]] = {}
 
-    async def connect(self, path: str = "/ws/training") -> None:
+    async def connect(self, path: str = WS_TRAINING_PATH) -> None:
         """Connect to a WebSocket endpoint.
 
         Args:
@@ -52,7 +53,7 @@ class CascorTrainingStream:
         url = f"{self.base_url}{path}"
         extra_headers = {}
         if self.api_key:
-            extra_headers["X-API-Key"] = self.api_key
+            extra_headers[API_KEY_HEADER_NAME] = self.api_key
         try:
             self._ws = await websockets.connect(url, additional_headers=extra_headers)
         except (OSError, websockets.exceptions.WebSocketException) as e:
@@ -102,23 +103,23 @@ class CascorTrainingStream:
 
     def on_metrics(self, callback: Callable[[Dict[str, Any]], None]) -> None:
         """Register a callback for metrics messages."""
-        self._register("metrics", callback)
+        self._register(WS_MSG_TYPE_METRICS, callback)
 
     def on_state(self, callback: Callable[[Dict[str, Any]], None]) -> None:
         """Register a callback for state change messages."""
-        self._register("state", callback)
+        self._register(WS_MSG_TYPE_STATE, callback)
 
     def on_topology(self, callback: Callable[[Dict[str, Any]], None]) -> None:
         """Register a callback for topology update messages."""
-        self._register("topology", callback)
+        self._register(WS_MSG_TYPE_TOPOLOGY, callback)
 
     def on_cascade_add(self, callback: Callable[[Dict[str, Any]], None]) -> None:
         """Register a callback for cascade unit addition messages."""
-        self._register("cascade_add", callback)
+        self._register(WS_MSG_TYPE_CASCADE_ADD, callback)
 
     def on_event(self, callback: Callable[[Dict[str, Any]], None]) -> None:
         """Register a callback for general event messages."""
-        self._register("event", callback)
+        self._register(WS_MSG_TYPE_EVENT, callback)
 
     # ─── Context Manager ─────────────────────────────────────────────────
 
@@ -159,28 +160,28 @@ class CascorControlStream:
 
     def __init__(
         self,
-        base_url: str = "ws://localhost:8200",
+        base_url: str = DEFAULT_WS_BASE_URL,
         api_key: Optional[str] = None,
-        timeout: float = 30.0,
+        timeout: float = DEFAULT_CONTROL_STREAM_TIMEOUT,
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key or os.environ.get("JUNIPER_CASCOR_API_KEY")
+        self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR)
         self._ws: Optional[ClientConnection] = None
         self._timeout = timeout
 
     async def connect(self) -> None:
         """Connect to the /ws/control endpoint."""
-        url = f"{self.base_url}/ws/control"
+        url = f"{self.base_url}{WS_CONTROL_PATH}"
         extra_headers = {}
         if self.api_key:
-            extra_headers["X-API-Key"] = self.api_key
+            extra_headers[API_KEY_HEADER_NAME] = self.api_key
         try:
             self._ws = await websockets.connect(url, additional_headers=extra_headers)
             # Read and validate the connection_established message
             raw = await self._ws.recv()
             msg = json.loads(raw)
-            if msg.get("type") != "connection_established":
-                raise JuniperCascorClientError(f"Expected connection_established, got: {msg.get('type', 'unknown')}")
+            if msg.get("type") != WS_MSG_TYPE_CONNECTION_ESTABLISHED:
+                raise JuniperCascorClientError(f"Expected {WS_MSG_TYPE_CONNECTION_ESTABLISHED}, got: {msg.get('type', 'unknown')}")
         except (OSError, websockets.exceptions.WebSocketException) as e:
             raise JuniperCascorConnectionError(f"Failed to connect to {url}: {e}") from e
 
