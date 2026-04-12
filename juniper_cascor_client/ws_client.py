@@ -1,19 +1,21 @@
 """WebSocket client for real-time JuniperCascor training streams.
 
 Provides async iteration over training metrics, state changes, topology
-updates, and cascade events. Also supports sending control commands.
+updates, and cascade events. Also supports sending control commands
+with per-request correlation via ``command_id``.
 """
 
 import asyncio
 import json
 import os
+import uuid
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 import websockets
 from websockets.asyncio.client import ClientConnection
 
-from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_WS_BASE_URL, WS_CONTROL_PATH, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_TRAINING_PATH
-from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConnectionError
+from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_SET_PARAMS_TIMEOUT, DEFAULT_WS_BASE_URL, MAX_PENDING_COMMANDS, WS_CONTROL_PATH, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_COMMAND_RESPONSE, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_TRAINING_PATH
+from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConnectionError, JuniperCascorOverloadError, JuniperCascorTimeoutError
 
 
 class CascorTrainingStream:
@@ -99,7 +101,7 @@ class CascorTrainingStream:
             message["params"] = params
         await self._ws.send(json.dumps(message))
 
-    # ─── Callback Registration ───────────────────────────────────────────
+    # ─── Callback Registration ─��─────────────────────────────────────────
 
     def on_metrics(self, callback: Callable[[Dict[str, Any]], None]) -> None:
         """Register a callback for metrics messages."""
@@ -133,7 +135,7 @@ class CascorTrainingStream:
     def __aiter__(self) -> AsyncIterator[Dict[str, Any]]:
         return self.stream()
 
-    # ─── Internal ────────────────────────────────────────────────────────
+    # ���── Internal ─���──────────────────────────────────────────────────────
 
     def _register(self, message_type: str, callback: Callable[[Dict[str, Any]], None]) -> None:
         if message_type not in self._callbacks:
@@ -151,11 +153,17 @@ class CascorControlStream:
     """Async WebSocket client for sending training control commands.
 
     Connects to /ws/control for bidirectional command/response communication.
+    Supports per-request correlation via ``command_id`` for concurrent callers.
 
     Example:
         >>> async with CascorControlStream("ws://localhost:8200") as ctrl:
         ...     response = await ctrl.command("start", {"epochs": 100})
         ...     print(response)
+
+    Example (set_params with correlation):
+        >>> async with CascorControlStream("ws://localhost:8200") as ctrl:
+        ...     result = await ctrl.set_params({"learning_rate": 0.01})
+        ...     print(result["data"]["status"])
     """
 
     def __init__(
@@ -168,6 +176,10 @@ class CascorControlStream:
         self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR)
         self._ws: Optional[ClientConnection] = None
         self._timeout = timeout
+
+        # Correlation state for set_params (and future correlated commands)
+        self._pending: Dict[str, asyncio.Future] = {}
+        self._recv_task: Optional[asyncio.Task] = None
 
     async def connect(self) -> None:
         """Connect to the /ws/control endpoint."""
@@ -187,12 +199,22 @@ class CascorControlStream:
 
     async def disconnect(self) -> None:
         """Close the WebSocket connection."""
+        if self._recv_task and not self._recv_task.done():
+            self._recv_task.cancel()
+            try:
+                await self._recv_task
+            except asyncio.CancelledError:
+                pass
+            self._recv_task = None
         if self._ws:
             await self._ws.close()
             self._ws = None
 
     async def command(self, command: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Send a command and wait for the response.
+
+        If the background recv task is active (started by ``set_params``),
+        routes through the correlation system. Otherwise uses direct recv.
 
         Args:
             command: Command name (start, stop, pause, resume, reset).
@@ -203,12 +225,68 @@ class CascorControlStream:
         """
         if not self._ws:
             raise JuniperCascorClientError("Not connected. Call connect() first.")
-        message: Dict[str, Any] = {"command": command}
+
+        # If recv task is running, route through correlation to avoid recv conflicts
+        if self._recv_task and not self._recv_task.done():
+            cid = str(uuid.uuid4())
+            message: Dict[str, Any] = {"command": command, "command_id": cid}
+            if params:
+                message["params"] = params
+            return await self._send_correlated(message, cid, timeout=self._timeout)
+
+        message = {"command": command}
         if params:
             message["params"] = params
         await self._ws.send(json.dumps(message))
         raw = await asyncio.wait_for(self._ws.recv(), timeout=self._timeout)
         return json.loads(raw)
+
+    async def set_params(
+        self,
+        params: dict,
+        *,
+        timeout: float = DEFAULT_SET_PARAMS_TIMEOUT,
+        command_id: Optional[str] = None,
+    ) -> dict:
+        """Send a set_params command with per-request correlation.
+
+        Uses ``command_id`` to correlate the request with its response,
+        allowing concurrent callers. Fails fast on timeout or disconnect
+        with no retries (D-20, C-04).
+
+        Args:
+            params: Parameter dict to apply (e.g. {"learning_rate": 0.01}).
+            timeout: Response timeout in seconds (default 1.0, D-01).
+            command_id: Optional correlation ID (auto-generated UUID if absent).
+
+        Returns:
+            The command_response envelope from the server.
+
+        Raises:
+            JuniperCascorTimeoutError: Response not received within timeout.
+            JuniperCascorConnectionError: WebSocket disconnected during wait.
+            JuniperCascorOverloadError: Too many concurrent pending commands.
+            JuniperCascorClientError: Not connected.
+        """
+        if not self._ws:
+            raise JuniperCascorClientError("Not connected. Call connect() first.")
+
+        if len(self._pending) >= MAX_PENDING_COMMANDS:
+            raise JuniperCascorOverloadError(f"Too many pending commands ({MAX_PENDING_COMMANDS} max)")
+
+        if command_id is None:
+            command_id = str(uuid.uuid4())
+
+        message: Dict[str, Any] = {
+            "type": "command",
+            "command": "set_params",
+            "command_id": command_id,
+            "params": params,
+        }
+
+        return await self._send_correlated(message, command_id, timeout=timeout)
+
+    # ─── Context Manager ─────────────────────��───────────────────────────
 
     async def __aenter__(self) -> "CascorControlStream":
         await self.connect()
@@ -216,3 +294,43 @@ class CascorControlStream:
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self.disconnect()
+
+    # ─── Internal: Correlation ───────────────────────────────────────────
+
+    async def _send_correlated(self, message: dict, command_id: str, *, timeout: float) -> dict:
+        """Send a message and await its correlated response by command_id."""
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        self._pending[command_id] = future
+
+        try:
+            await self._ensure_recv_task()
+            await self._ws.send(json.dumps(message))
+            return await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError:
+            raise JuniperCascorTimeoutError(f"set_params timed out after {timeout}s (command_id={command_id})") from None
+        except asyncio.CancelledError:
+            raise
+        finally:
+            self._pending.pop(command_id, None)
+
+    async def _ensure_recv_task(self) -> None:
+        """Start the background recv loop if not already running."""
+        if self._recv_task is None or self._recv_task.done():
+            self._recv_task = asyncio.create_task(self._recv_loop())
+
+    async def _recv_loop(self) -> None:
+        """Background task: route incoming messages to pending futures by command_id."""
+        try:
+            while self._ws:
+                raw = await self._ws.recv()
+                msg = json.loads(raw)
+                if msg.get("type") == WS_MSG_TYPE_COMMAND_RESPONSE:
+                    cid = msg.get("data", {}).get("command_id")
+                    if cid and cid in self._pending:
+                        self._pending[cid].set_result(msg)
+        except (websockets.exceptions.ConnectionClosed, Exception):
+            # Fail all pending futures on disconnect (C-04)
+            for cid, future in list(self._pending.items()):
+                if not future.done():
+                    future.set_exception(JuniperCascorConnectionError("WebSocket disconnected"))

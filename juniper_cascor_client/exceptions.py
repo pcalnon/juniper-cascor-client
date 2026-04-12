@@ -41,3 +41,9 @@ class JuniperCascorServiceUnavailableError(JuniperCascorClientError):
     """Raised when the service is not ready (503)."""
 
     pass
+
+
+class JuniperCascorOverloadError(JuniperCascorClientError):
+    """Raised when too many concurrent commands are pending (bounded map full)."""
+
+    pass

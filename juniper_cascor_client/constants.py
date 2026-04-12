@@ -103,6 +103,14 @@ WS_MSG_TYPE_EVENT: str = "event"
 # Server-emitted control-stream handshake message type.
 WS_MSG_TYPE_CONNECTION_ESTABLISHED: str = "connection_established"
 
+# Server-emitted command response (echoes command_id for correlation).
+WS_MSG_TYPE_COMMAND_RESPONSE: str = "command_response"
+
+# ─── WebSocket set_params Defaults ──────────────────────────────────────────
+
+DEFAULT_SET_PARAMS_TIMEOUT: float = 1.0  # D-01: fail fast to REST fallback
+MAX_PENDING_COMMANDS: int = 256
+
 # ─── Decision Boundary ───────────────────────────────────────────────────────
 
 DEFAULT_DECISION_BOUNDARY_RESOLUTION: int = 50
