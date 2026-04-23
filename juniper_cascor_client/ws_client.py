@@ -178,8 +178,8 @@ class CascorControlStream:
         self._timeout = timeout
 
         # Correlation state for set_params (and future correlated commands)
-        self._pending: Dict[str, asyncio.Future] = {}
-        self._recv_task: Optional[asyncio.Task] = None
+        self._pending: Dict[str, "asyncio.Future[Dict[str, Any]]"] = {}
+        self._recv_task: Optional["asyncio.Task[None]"] = None
 
     async def connect(self) -> None:
         """Connect to the /ws/control endpoint."""
@@ -243,11 +243,11 @@ class CascorControlStream:
 
     async def set_params(
         self,
-        params: dict,
+        params: Dict[str, Any],
         *,
         timeout: float = DEFAULT_SET_PARAMS_TIMEOUT,
         command_id: Optional[str] = None,
-    ) -> dict:
+    ) -> Dict[str, Any]:
         """Send a set_params command with per-request correlation.
 
         Uses ``command_id`` to correlate the request with its response,
@@ -297,10 +297,10 @@ class CascorControlStream:
 
     # ─── Internal: Correlation ───────────────────────────────────────────
 
-    async def _send_correlated(self, message: dict, command_id: str, *, timeout: float) -> dict:
+    async def _send_correlated(self, message: Dict[str, Any], command_id: str, *, timeout: float) -> Dict[str, Any]:
         """Send a message and await its correlated response by command_id."""
         loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
+        future: "asyncio.Future[Dict[str, Any]]" = loop.create_future()
         self._pending[command_id] = future
 
         try:
@@ -331,6 +331,6 @@ class CascorControlStream:
                         self._pending[cid].set_result(msg)
         except (websockets.exceptions.ConnectionClosed, Exception):
             # Fail all pending futures on disconnect (C-04)
-            for cid, future in list(self._pending.items()):
+            for _cid, future in list(self._pending.items()):
                 if not future.done():
                     future.set_exception(JuniperCascorConnectionError("WebSocket disconnected"))
