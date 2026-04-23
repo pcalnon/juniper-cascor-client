@@ -90,8 +90,8 @@ GET_PARAMS_DEFAULT_MAX_HIDDEN_UNITS: int = 10
 XOR_LEARNING_RATE: float = 0.05
 XOR_INITIAL_HIDDEN_UNITS: int = 2
 XOR_INITIAL_EPOCH: int = 150
-ERROR_PRONE_INITIAL_HIDDEN_UNITS: int = 1
-ERROR_PRONE_INITIAL_EPOCH: int = 5
+# ERROR_PRONE_INITIAL_HIDDEN_UNITS: int = 1
+# ERROR_PRONE_INITIAL_EPOCH: int = 5
 
 # ─── Loss Curve Parameters ───────────────────────────────────────────────────
 
