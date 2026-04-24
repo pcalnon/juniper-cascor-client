@@ -295,8 +295,18 @@ class TestErrorHandling:
 
     @responses.activate
     def test_service_unavailable_503(self):
+        # XREPO-02 / CC-02 (2026-04-24): 503 is now a retryable status.
+        # To exercise the server-error -> typed-exception mapping, swap
+        # the session adapter for a retry-free one after construction.
+        # This mirrors how integration tests that need deterministic
+        # error surfacing would disable retries in practice.
+        from requests.adapters import HTTPAdapter
+
         responses.add(responses.GET, f"{API_URL}/network", json=_error_response("SERVICE_UNAVAILABLE", "Not ready"), status=503)
         with JuniperCascorClient(BASE_URL) as client:
+            no_retry = HTTPAdapter(max_retries=0)
+            client.session.mount("http://", no_retry)
+            client.session.mount("https://", no_retry)
             with pytest.raises(JuniperCascorServiceUnavailableError):
                 client.get_network()
 
