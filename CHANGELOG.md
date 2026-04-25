@@ -11,12 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Serena code agent integration configuration (`.serena/project.yml`)
 - New `juniper_cascor_client/constants.py` module centralizing wire-protocol identifiers (`API_KEY_*`, `API_VERSION_*`), the full set of REST `ENDPOINT_*` paths, WebSocket `WS_*_PATH` constants, `DEFAULT_*` constructor defaults, `MSG_TYPE_*` discriminators bit-identical to the cascor server's `MessageType` enum, and scenario/fake-client defaults.
+- `tests/test_retry_policy.py`: new regression suite asserting that the retryable-status list covers 429/502/503/504 in both directions (canonical transients retried, non-transient 4xx/5xx not) and that the `Retry` adapter mounted on the session reflects these constants end-to-end.
 
 ### Changed
 
 - `client.py`, `ws_client.py`, `testing/fake_client.py`, and `testing/scenarios.py` now import from `juniper_cascor_client.constants` instead of embedding inline literals (~200 replacements total across REST + WebSocket + testing utilities).
 - `MSG_TYPE_*` values are guaranteed to remain bit-identical to the `juniper-cascor` server's `MessageType(StrEnum)` and to the matching constants in `juniper-cascor-worker` — verified by Wave 5 cross-repo alignment checks.
 - `AGENTS.md` gained a new "Constants" section documenting the categories, server alignment, and contribution rules.
+- **XREPO-02 / CC-02 (Phase 4B)**: `RETRYABLE_STATUS_CODES` now includes 429 (Too Many Requests) and 503 (Service Unavailable) in addition to the existing 502/504. 503 is the canonical transient error emitted by the cascor service during restart / deploy; prior behavior surfaced deploy windows as hard failures at the caller. 429 is retried so clients back off cleanly when the server applies rate limits.
 
 ### Notes
 

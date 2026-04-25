@@ -28,7 +28,12 @@ API_VERSION_PATH: str = "/v1"
 DEFAULT_REQUEST_TIMEOUT: int = 30
 DEFAULT_RETRY_COUNT: int = 3
 DEFAULT_BACKOFF_FACTOR: float = 0.5
-RETRYABLE_STATUS_CODES: List[int] = [502, 504]
+# XREPO-02 / CC-02 (2026-04-24): 503 is the canonical transient error
+# emitted by services during restart / deploy; 429 (Too Many Requests)
+# is also safe to retry when the server sets Retry-After. Both were
+# previously missing from the retry list, causing short outages to
+# bubble up as hard failures to callers.
+RETRYABLE_STATUS_CODES: List[int] = [429, 502, 503, 504]
 RETRY_ALLOWED_METHODS: List[str] = ["GET", "POST", "DELETE", "PUT", "PATCH"]
 DEFAULT_POOL_MAXSIZE: int = 10
 
