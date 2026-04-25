@@ -363,13 +363,28 @@ class JuniperCascorClient:
                 timeout=self.timeout,
             )
             self._handle_response(response)
-            return response.json()
+            return self._parse_json_body(response, url)
         except requests.ConnectionError as e:
             raise JuniperCascorConnectionError(f"Failed to connect to {url}: {e}") from e
         except requests.Timeout as e:
             raise JuniperCascorTimeoutError(f"Request to {url} timed out after {self.timeout}s") from e
         except requests.RequestException as e:
             raise JuniperCascorClientError(f"Request to {url} failed: {e}") from e
+
+    @staticmethod
+    def _parse_json_body(response: requests.Response, url: str) -> Dict[str, Any]:
+        """Parse a successful response body as JSON.
+
+        ERR-02 (Phase 4C): callers previously invoked ``response.json()`` directly,
+        which raises ``requests.exceptions.JSONDecodeError`` (a ``ValueError`` subclass)
+        on malformed bodies. Surface a typed ``JuniperCascorClientError`` instead so
+        callers can distinguish protocol bugs from transport errors.
+        """
+        try:
+            return response.json()
+        except ValueError as e:
+            preview = (response.text or "")[:200]
+            raise JuniperCascorClientError(f"Malformed JSON response from {url}: {e}: {preview!r}") from e
 
     def _handle_response(self, response: requests.Response) -> None:
         if response.ok:
@@ -382,6 +397,8 @@ class JuniperCascorClient:
             else:
                 error_msg = body.get("detail", response.text)
         except (ValueError, KeyError):
+            # ValueError covers requests.exceptions.JSONDecodeError; fall back
+            # to raw text when the error body itself is not valid JSON.
             error_msg = response.text
 
         status = response.status_code
