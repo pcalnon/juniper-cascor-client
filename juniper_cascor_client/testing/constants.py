@@ -34,13 +34,30 @@ ENVELOPE_STATUS_SUCCESS: str = "success"
 
 ERROR_PRONE_ERROR_RATE: float = 0.1
 
-# ─── Training State Names ────────────────────────────────────────────────────
+# ─── Training State Names (XREPO-05) ─────────────────────────────────────────
 
-STATE_IDLE: str = "idle"
-STATE_TRAINING: str = "training"
-STATE_PAUSED: str = "paused"
-STATE_COMPLETE: str = "complete"
+# These constants are the FakeCascorClient's *internal* state-machine
+# identifiers AND the values the fake emits in its ``state`` /
+# ``training_state`` response fields. Phase 4D aligned them with the cascor
+# server's canonical UPPERCASE FSM names so consumers of the fake see the
+# same casing they would receive from the real service.
+#
+# Pre-Phase-4D values (lowercase "idle"/"training"/"paused"/"complete") are
+# intentionally retained as compatibility aliases below; new code SHOULD use
+# either the production ``TRAINING_STATE_*`` constants in
+# ``juniper_cascor_client.constants`` or these uppercase identifiers.
+STATE_IDLE: str = "STOPPED"
+STATE_TRAINING: str = "STARTED"
+STATE_PAUSED: str = "PAUSED"
+STATE_COMPLETE: str = "COMPLETED"
 VALID_STATES: FrozenSet[str] = frozenset({STATE_IDLE, STATE_TRAINING, STATE_PAUSED, STATE_COMPLETE})
+
+# Backwards-compatibility aliases — preserve the legacy lowercase tokens for
+# callers that still recognise them. New code should not depend on these.
+LEGACY_STATE_IDLE: str = "idle"
+LEGACY_STATE_TRAINING: str = "training"
+LEGACY_STATE_PAUSED: str = "paused"
+LEGACY_STATE_COMPLETE: str = "complete"
 
 # ─── FSM Status Identifiers (cascor server protocol) ─────────────────────────
 

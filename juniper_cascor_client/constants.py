@@ -116,6 +116,33 @@ WS_MSG_TYPE_COMMAND_RESPONSE: str = "command_response"
 DEFAULT_SET_PARAMS_TIMEOUT: float = 1.0  # D-01: fail fast to REST fallback
 MAX_PENDING_COMMANDS: int = 256
 
+# ─── WebSocket Outbound Message Envelope (XREPO-07/08, CC-06) ───────────────
+
+# All client→server WS messages on /ws/control share this envelope ``type``.
+# Phase 4D unifies send_command() and CascorControlStream.command() with
+# set_params() so the server can dispatch by ``type`` regardless of which
+# client method produced the message.
+WS_MSG_TYPE_COMMAND_OUT: str = "command"
+
+# ─── Canonical Training State Names (XREPO-05) ──────────────────────────────
+
+# Source of truth: cascor server FSM state names. Clients comparing against
+# server-emitted ``state`` / ``training_state`` values should use these
+# constants rather than hand-rolled string literals to avoid casing drift.
+TRAINING_STATE_STOPPED: str = "STOPPED"
+TRAINING_STATE_STARTED: str = "STARTED"
+TRAINING_STATE_PAUSED: str = "PAUSED"
+TRAINING_STATE_FAILED: str = "FAILED"
+TRAINING_STATE_COMPLETED: str = "COMPLETED"
+
+# ─── epochs_max Fallback (XREPO-06 — partial; full alignment deferred) ──────
+
+# Cascor server's compiled-in default for ``epochs_max``. Canopy and other
+# clients SHOULD prefer the value returned by ``GET /v1/network`` and only
+# fall back to this constant when the server is unreachable during initial
+# render. See roadmap XREPO-06 for the complete cross-repo alignment plan.
+DEFAULT_EPOCHS_MAX_FALLBACK: int = 10_000
+
 # ─── Decision Boundary ───────────────────────────────────────────────────────
 
 DEFAULT_DECISION_BOUNDARY_RESOLUTION: int = 50

@@ -1059,12 +1059,27 @@ class FakeCascorClient:
         normal state transition rules to allow testing of specific states.
 
         Args:
-            state: Target state ('idle', 'training', 'paused', 'complete').
+            state: Target state — one of the canonical UPPERCASE FSM names
+                ('STOPPED', 'STARTED', 'PAUSED', 'COMPLETED'). XREPO-05
+                aligned the FakeCascorClient with the cascor server FSM in
+                Phase 4D; legacy lowercase names are accepted via the
+                ``LEGACY_STATE_*`` aliases in
+                ``juniper_cascor_client.testing.constants``.
 
         Raises:
             ValueError: If state is not a valid training state.
         """
         with self._lock:
+            # XREPO-05: accept legacy lowercase synonyms during the migration
+            # window so callers that pre-date Phase 4D continue to work.
+            legacy_aliases = {
+                "idle": STATE_IDLE,
+                "training": STATE_TRAINING,
+                "paused": STATE_PAUSED,
+                "complete": STATE_COMPLETE,
+            }
+            if state in legacy_aliases:
+                state = legacy_aliases[state]
             if state not in VALID_STATES:
                 valid = ", ".join(sorted(VALID_STATES))
                 raise ValueError(f"Invalid state '{state}'. Valid states: {valid}")
