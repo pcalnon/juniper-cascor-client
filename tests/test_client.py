@@ -5,6 +5,7 @@ import responses
 from responses import matchers
 
 from juniper_cascor_client import JuniperCascorClient, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorValidationError
+from juniper_cascor_client.exceptions import JuniperCascorClientError
 
 BASE_URL = "http://localhost:8200"
 API_URL = f"{BASE_URL}/v1"
@@ -314,3 +315,38 @@ class TestErrorHandling:
         with JuniperCascorClient("http://localhost:19999") as client:
             with pytest.raises(JuniperCascorConnectionError):
                 client.health_check()
+
+
+class TestMalformedJsonResponse:
+    """ERR-02 (Phase 4C): malformed JSON bodies should raise typed errors."""
+
+    @responses.activate
+    def test_success_status_with_invalid_json_raises_client_error(self):
+        responses.add(
+            responses.GET,
+            f"{API_URL}/health",
+            body="this is not json {",
+            status=200,
+            content_type="application/json",
+        )
+        with JuniperCascorClient(BASE_URL) as client:
+            with pytest.raises(JuniperCascorClientError, match="Malformed JSON response"):
+                client.health_check()
+
+    @responses.activate
+    def test_error_status_with_invalid_json_uses_raw_text(self):
+        responses.add(
+            responses.GET,
+            f"{API_URL}/network",
+            body="upstream proxy error not json",
+            status=502,
+            content_type="text/plain",
+        )
+        with JuniperCascorClient(BASE_URL) as client:
+            from requests.adapters import HTTPAdapter
+
+            no_retry = HTTPAdapter(max_retries=0)
+            client.session.mount("http://", no_retry)
+            client.session.mount("https://", no_retry)
+            with pytest.raises(JuniperCascorClientError, match="upstream proxy error not json"):
+                client.get_network()
