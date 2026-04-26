@@ -37,7 +37,7 @@ class TestHealth:
         assert "version" in data
         assert "uptime_seconds" in data
         assert isinstance(data["network_loaded"], bool)
-        assert data["training_state"] in {"idle", "training", "paused", "complete"}
+        assert data["training_state"] in {"STOPPED", "STARTED", "PAUSED", "COMPLETED"}
 
     @pytest.mark.unit
     def test_health_check_reflects_network_loaded(self, fake_idle):
@@ -49,7 +49,7 @@ class TestHealth:
     def test_health_check_reflects_training_state(self, fake_training):
         """health_check reports the current training state."""
         result = fake_training.health_check()
-        assert result["data"]["training_state"] == "training"
+        assert result["data"]["training_state"] == "STARTED"
 
     @pytest.mark.unit
     def test_is_alive_returns_true(self, fake_idle):
@@ -122,7 +122,7 @@ class TestNetworkManagement:
         assert result["status"] == "success"
         data = result["data"]
         assert "config" in data
-        assert data["state"] == "training"
+        assert data["state"] == "STARTED"
         assert data["network_loaded"] is True
         assert isinstance(data["epoch"], int)
 
@@ -198,7 +198,7 @@ class TestTrainingControl:
         fake_idle.create_network(input_size=2, output_size=1, learning_rate=0.01)
         result = fake_idle.start_training(epochs=100)
         assert result["status"] == "success"
-        assert result["data"]["state"] == "training"
+        assert result["data"]["state"] == "STARTED"
         assert result["data"]["epochs"] == 100
 
     @pytest.mark.unit
@@ -246,7 +246,7 @@ class TestTrainingControl:
         """Stopping training transitions from 'training' to 'idle'."""
         result = fake_training.stop_training()
         assert result["status"] == "success"
-        assert result["data"]["state"] == "idle"
+        assert result["data"]["state"] == "STOPPED"
 
     @pytest.mark.unit
     def test_stop_training_when_idle_raises(self, fake_idle):
@@ -259,14 +259,14 @@ class TestTrainingControl:
         """Stopping training from 'paused' state succeeds."""
         fake_training.pause_training()
         result = fake_training.stop_training()
-        assert result["data"]["state"] == "idle"
+        assert result["data"]["state"] == "STOPPED"
 
     @pytest.mark.unit
     def test_pause_training(self, fake_training):
         """Pausing active training transitions to 'paused'."""
         result = fake_training.pause_training()
         assert result["status"] == "success"
-        assert result["data"]["state"] == "paused"
+        assert result["data"]["state"] == "PAUSED"
 
     @pytest.mark.unit
     def test_pause_training_when_not_training_raises(self, fake_idle):
@@ -280,7 +280,7 @@ class TestTrainingControl:
         fake_training.pause_training()
         result = fake_training.resume_training()
         assert result["status"] == "success"
-        assert result["data"]["state"] == "training"
+        assert result["data"]["state"] == "STARTED"
 
     @pytest.mark.unit
     def test_resume_training_when_not_paused_raises(self, fake_training):
@@ -294,7 +294,7 @@ class TestTrainingControl:
         fake_training.advance_epoch(5)
         result = fake_training.reset_training()
         assert result["status"] == "success"
-        assert result["data"]["state"] == "idle"
+        assert result["data"]["state"] == "STOPPED"
         status = fake_training.get_training_status()
         assert status["data"]["monitor"]["current_epoch"] == 0
 

@@ -14,7 +14,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 import websockets
 from websockets.asyncio.client import ClientConnection
 
-from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_SET_PARAMS_TIMEOUT, DEFAULT_WS_BASE_URL, MAX_PENDING_COMMANDS, WS_CONTROL_PATH, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_COMMAND_RESPONSE, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_TRAINING_PATH
+from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_SET_PARAMS_TIMEOUT, DEFAULT_WS_BASE_URL, MAX_PENDING_COMMANDS, WS_CONTROL_PATH, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_COMMAND_OUT, WS_MSG_TYPE_COMMAND_RESPONSE, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_TRAINING_PATH
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConnectionError, JuniperCascorOverloadError, JuniperCascorTimeoutError
 
 
@@ -96,7 +96,10 @@ class CascorTrainingStream:
         """
         if not self._ws:
             raise JuniperCascorClientError("Not connected. Call connect() first.")
-        message: Dict[str, Any] = {"command": command}
+        # XREPO-07/08, CC-06: include the canonical "type" envelope so the
+        # server can dispatch by ``type`` consistently across send_command(),
+        # CascorControlStream.command(), and set_params().
+        message: Dict[str, Any] = {"type": WS_MSG_TYPE_COMMAND_OUT, "command": command}
         if params:
             message["params"] = params
         await self._ws.send(json.dumps(message))
@@ -226,15 +229,18 @@ class CascorControlStream:
         if not self._ws:
             raise JuniperCascorClientError("Not connected. Call connect() first.")
 
+        # XREPO-07/08, CC-06: include the canonical "type" envelope on both
+        # the correlated and direct paths so all client→server WS messages
+        # share a uniform format with set_params().
         # If recv task is running, route through correlation to avoid recv conflicts
         if self._recv_task and not self._recv_task.done():
             cid = str(uuid.uuid4())
-            message: Dict[str, Any] = {"command": command, "command_id": cid}
+            message: Dict[str, Any] = {"type": WS_MSG_TYPE_COMMAND_OUT, "command": command, "command_id": cid}
             if params:
                 message["params"] = params
             return await self._send_correlated(message, cid, timeout=self._timeout)
 
-        message = {"command": command}
+        message = {"type": WS_MSG_TYPE_COMMAND_OUT, "command": command}
         if params:
             message["params"] = params
         await self._ws.send(json.dumps(message))
@@ -278,7 +284,7 @@ class CascorControlStream:
             command_id = str(uuid.uuid4())
 
         message: Dict[str, Any] = {
-            "type": "command",
+            "type": WS_MSG_TYPE_COMMAND_OUT,
             "command": "set_params",
             "command_id": command_id,
             "params": params,

@@ -16,6 +16,7 @@ import asyncio
 import copy
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
+from juniper_cascor_client.constants import WS_MSG_TYPE_COMMAND_OUT
 from juniper_cascor_client.exceptions import JuniperCascorClientError
 
 
@@ -141,7 +142,10 @@ class FakeCascorTrainingStream:
         if not self._connected:
             raise JuniperCascorClientError("Not connected. Call connect() first.")
 
-        message: Dict[str, Any] = {"command": command}
+        # Mirror the real CascorTrainingStream.send_command() envelope so the
+        # fake's recorded commands match what the production client puts on
+        # the wire (XREPO-07/08, CC-06).
+        message: Dict[str, Any] = {"type": WS_MSG_TYPE_COMMAND_OUT, "command": command}
         if params:
             message["params"] = params
         self._sent_commands.append(message)

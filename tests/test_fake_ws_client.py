@@ -220,8 +220,11 @@ class TestSendCommand:
         await stream.send_command("stop")
 
         assert len(stream._sent_commands) == 2
-        assert stream._sent_commands[0] == {"command": "start", "params": {"epochs": 100}}
-        assert stream._sent_commands[1] == {"command": "stop"}
+        # XREPO-07/08, CC-06: send_command now emits the canonical "type":
+        # "command" envelope to match CascorControlStream.command() and
+        # set_params() on the wire.
+        assert stream._sent_commands[0] == {"type": "command", "command": "start", "params": {"epochs": 100}}
+        assert stream._sent_commands[1] == {"type": "command", "command": "stop"}
         await stream.disconnect()
 
     @pytest.mark.unit

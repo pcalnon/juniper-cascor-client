@@ -143,8 +143,36 @@ CascorTrainingStream         Async WebSocket streaming client (async context man
 
 CascorControlStream          Async WebSocket command/response client (async context manager)
   ├── connect(), disconnect()
-  └── command() -> Dict (send and wait for response)
+  ├── command(command, params=None) -> Dict
+  │       Send a control command (start/stop/pause/resume/reset). Auto-routes
+  │       through the per-request correlation system if set_params() has
+  │       already started the background recv task; otherwise uses a direct
+  │       single-recv call. Both paths emit the canonical envelope
+  │       ``{"type": "command", "command": ..., ...}`` (XREPO-07/08, CC-06).
+  └── set_params(params, *, timeout=1.0, command_id=None) -> Dict
+          Apply a runtime parameter update (e.g. ``{"learning_rate": 0.01}``)
+          via /ws/control with per-request correlation by ``command_id``.
+          Fails fast on timeout or disconnect with no automatic retries
+          (D-20, C-04). The default 1.0 s timeout (D-01) lets callers fall
+          back to a REST update without waiting indefinitely. Concurrent
+          callers are bounded by ``MAX_PENDING_COMMANDS`` (256); exceeding
+          the cap raises ``JuniperCascorOverloadError``.
 ```
+
+### WebSocket Outbound Message Envelope
+
+All client→server messages on `/ws/control` carry a uniform envelope so the
+server can dispatch by `type` regardless of which client method produced
+them (XREPO-07/08, CC-06; aligned in Phase 4D):
+
+```json
+{"type": "command", "command": "<name>", "params": {...}, "command_id": "<uuid>"}
+```
+
+`type` is always `"command"` (the constant `WS_MSG_TYPE_COMMAND_OUT`);
+`params` is omitted when empty; `command_id` is present whenever per-request
+correlation is in effect (`set_params()` always; `command()` only when the
+correlated path is taken).
 
 ### Exception Hierarchy
 

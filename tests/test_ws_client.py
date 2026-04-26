@@ -99,8 +99,23 @@ class TestCascorTrainingStream:
         await stream.send_command("start", {"epochs": 100})
         mock_ws.send.assert_awaited_once()
         sent = json.loads(mock_ws.send.call_args[0][0])
+        # XREPO-07/08, CC-06: every client→server WS message carries the
+        # canonical "type": "command" envelope so the server can dispatch
+        # uniformly across send_command(), command(), and set_params().
+        assert sent["type"] == "command"
         assert sent["command"] == "start"
         assert sent["params"]["epochs"] == 100
+
+    @pytest.mark.asyncio
+    async def test_send_command_without_params_includes_type(self):
+        """XREPO-07/08: send_command emits "type": "command" even when no params are supplied."""
+        mock_ws = AsyncMock()
+        stream = CascorTrainingStream()
+        stream._ws = mock_ws
+
+        await stream.send_command("stop")
+        sent = json.loads(mock_ws.send.call_args[0][0])
+        assert sent == {"type": "command", "command": "stop"}
 
     @pytest.mark.asyncio
     async def test_send_command_not_connected(self):
@@ -197,8 +212,56 @@ class TestCascorControlStream:
 
         await ctrl.command("start", {"epochs": 100})
         sent = json.loads(mock_ws.send.call_args[0][0])
+        # XREPO-07/08, CC-06: command() now emits the canonical "type":
+        # "command" envelope on both correlated and direct paths.
+        assert sent["type"] == "command"
         assert sent["command"] == "start"
         assert sent["params"]["epochs"] == 100
+
+    @pytest.mark.asyncio
+    async def test_command_direct_path_emits_type_envelope(self):
+        """XREPO-07/08: direct (non-correlated) command() path includes "type": "command"."""
+        mock_ws = AsyncMock()
+        mock_ws.recv = AsyncMock(return_value=json.dumps({"type": "command_response", "data": {"status": "success"}}))
+        ctrl = CascorControlStream()
+        ctrl._ws = mock_ws
+        # No background recv task → direct path
+        assert ctrl._recv_task is None
+
+        await ctrl.command("stop")
+        sent = json.loads(mock_ws.send.call_args[0][0])
+        assert sent == {"type": "command", "command": "stop"}
+
+    @pytest.mark.asyncio
+    async def test_command_correlated_path_emits_type_envelope(self):
+        """XREPO-07/08: correlated command() path includes "type": "command" alongside command_id."""
+        ctrl = CascorControlStream()
+        mock_ws = AsyncMock()
+        ctrl._ws = mock_ws
+
+        # Manufacture a recv task so command() takes the correlated path
+        async def fake_recv():
+            import asyncio as _asyncio
+
+            await _asyncio.sleep(0.01)
+            sent = json.loads(mock_ws.send.call_args[0][0])
+            cid = sent["command_id"]
+            return json.dumps({"type": "command_response", "data": {"command": "stop", "status": "success", "command_id": cid}})
+
+        mock_ws.recv = AsyncMock(side_effect=fake_recv)
+        # Start the recv loop manually so the next command() call routes through correlation
+        await ctrl._ensure_recv_task()
+        try:
+            await ctrl.command("stop")
+        finally:
+            # Tear down the recv task to avoid leaking
+            if ctrl._recv_task and not ctrl._recv_task.done():
+                ctrl._recv_task.cancel()
+
+        sent = json.loads(mock_ws.send.call_args[0][0])
+        assert sent["type"] == "command"
+        assert sent["command"] == "stop"
+        assert "command_id" in sent
 
     @pytest.mark.asyncio
     async def test_command_not_connected(self):
