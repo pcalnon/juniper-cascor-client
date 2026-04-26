@@ -99,8 +99,23 @@ class TestCascorTrainingStream:
         await stream.send_command("start", {"epochs": 100})
         mock_ws.send.assert_awaited_once()
         sent = json.loads(mock_ws.send.call_args[0][0])
+        # XREPO-07/08, CC-06: every client→server WS message carries the
+        # canonical "type": "command" envelope so the server can dispatch
+        # uniformly across send_command(), command(), and set_params().
+        assert sent["type"] == "command"
         assert sent["command"] == "start"
         assert sent["params"]["epochs"] == 100
+
+    @pytest.mark.asyncio
+    async def test_send_command_without_params_includes_type(self):
+        """XREPO-07/08: send_command emits "type": "command" even when no params are supplied."""
+        mock_ws = AsyncMock()
+        stream = CascorTrainingStream()
+        stream._ws = mock_ws
+
+        await stream.send_command("stop")
+        sent = json.loads(mock_ws.send.call_args[0][0])
+        assert sent == {"type": "command", "command": "stop"}
 
     @pytest.mark.asyncio
     async def test_send_command_not_connected(self):
