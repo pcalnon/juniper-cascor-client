@@ -184,5 +184,5 @@ JuniperCascorClientError (base)
 - [juniper-cascor-client REFERENCE.md](REFERENCE.md) -- Full API reference
 - [juniper-cascor-client QUICK_START.md](QUICK_START.md) -- Getting started guide
 - [juniper-cascor-client AGENTS.md](../AGENTS.md) -- Agent development guide
-- [Ecosystem Cheatsheet](../../juniper-ml/notes/DEVELOPER_CHEATSHEET.md) -- Cross-project procedures
+- [Ecosystem Cheatsheet](../../juniper-ml/docs/DEVELOPER_CHEATSHEET_JUNIPER-ML.md) -- Cross-project procedures
 - [juniper-data-client Cheatsheet](../../juniper-data-client/docs/DEVELOPER_CHEATSHEET.md) -- Companion client library
