@@ -9,7 +9,7 @@ description = "HTTP/WebSocket client for the JuniperCascor neural network traini
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Paul Calnon" }]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 keywords = ["juniper", "cascade-correlation", "neural-network", "machine-learning", "api-client"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -17,7 +17,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -30,6 +29,10 @@ dependencies = [
     "requests>=2.28.0",
     "urllib3>=2.0.0",
     "websockets>=11.0",
+    # METRICS-MON R2.2.4 / seed-05: WS frame schema validation. Pinned at
+    # the first stable release; consumers should never resolve back to
+    # the alpha line.
+    "juniper-cascor-protocol>=0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -39,6 +42,17 @@ test = [
     "pytest-timeout>=2.2.0",
     "pytest-asyncio>=0.21.0",
     "responses>=0.23.0",
+    # METRICS-MON R2.2.4: tests exercise the observability counter under
+    # the [observability] code path, so they require prometheus-client.
+    "prometheus-client>=0.20.0",
+]
+observability = [
+    # METRICS-MON R2.2.4: opt-in dep that enables the
+    # juniper_cascor_client_unrecognized_ws_frames_total Prometheus
+    # counter for inbound-frame validation failures. Without this extra,
+    # the client still validates and emits a structured WARNING log
+    # line — only the metric is missing.
+    "prometheus-client>=0.20.0",
 ]
 dev = [
     "juniper-cascor-client[test]",
