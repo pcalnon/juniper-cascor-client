@@ -12,10 +12,36 @@ import uuid
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 import websockets
+from juniper_cascor_protocol.envelope import UnknownEnvelope, validate_envelope
 from websockets.asyncio.client import ClientConnection
 
 from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_SET_PARAMS_TIMEOUT, DEFAULT_WS_BASE_URL, MAX_PENDING_COMMANDS, WS_CONTROL_PATH, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_COMMAND_OUT, WS_MSG_TYPE_COMMAND_RESPONSE, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_TRAINING_PATH
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConnectionError, JuniperCascorOverloadError, JuniperCascorTimeoutError
+from juniper_cascor_client.observability import record_unrecognized_frame
+
+
+def _validate_and_record(message: Dict[str, Any], endpoint: str) -> Dict[str, Any]:
+    """Validate an inbound WS frame envelope; observe (don't reject) on failure.
+
+    METRICS-MON R2.2.4 / seed-05: every frame the client deserializes is
+    passed through :func:`juniper_cascor_protocol.envelope.validate_envelope`
+    so a server-side schema regression surfaces here as a clean
+    log+counter event instead of a downstream ``KeyError``. Validation is
+    purely **observational** — the original ``message`` dict is returned
+    unchanged so callers (`stream()`, `_dispatch`, `_recv_loop`) keep the
+    historical contract.
+
+    Args:
+        message: The dict produced by ``json.loads(raw_ws_frame)``.
+        endpoint: ``"training"`` or ``"control"`` — for the Prometheus label.
+
+    Returns:
+        ``message`` unchanged.
+    """
+    envelope = validate_envelope(message)
+    if isinstance(envelope, UnknownEnvelope):
+        record_unrecognized_frame(envelope.type, endpoint)
+    return message
 
 
 class CascorTrainingStream:
@@ -74,6 +100,8 @@ class CascorTrainingStream:
         try:
             async for raw in self._ws:
                 message = json.loads(raw)
+                # METRICS-MON R2.2.4: observational envelope validation; never raises.
+                _validate_and_record(message, endpoint="training")
                 self._dispatch(message)
                 yield message
         except websockets.exceptions.ConnectionClosed:
@@ -245,7 +273,10 @@ class CascorControlStream:
             message["params"] = params
         await self._ws.send(json.dumps(message))
         raw = await asyncio.wait_for(self._ws.recv(), timeout=self._timeout)
-        return json.loads(raw)
+        response = json.loads(raw)
+        # METRICS-MON R2.2.4: observational envelope validation; never raises.
+        _validate_and_record(response, endpoint="control")
+        return response
 
     async def set_params(
         self,
@@ -331,6 +362,8 @@ class CascorControlStream:
             while self._ws:
                 raw = await self._ws.recv()
                 msg = json.loads(raw)
+                # METRICS-MON R2.2.4: observational envelope validation; never raises.
+                _validate_and_record(msg, endpoint="control")
                 if msg.get("type") == WS_MSG_TYPE_COMMAND_RESPONSE:
                     cid = msg.get("data", {}).get("command_id")
                     if cid and cid in self._pending:
