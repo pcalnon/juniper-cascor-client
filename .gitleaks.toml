@@ -1,0 +1,58 @@
+# gitleaks configuration for juniper-cascor-client
+#
+# Validation finding V22 (notes/CI_VALIDATION_FINDINGS_2026-04-29.md
+# in juniper-ml) — gitleaks 8.x's heuristic ``generic-api-key`` rule
+# matched the literal string ``"explicit-key-789"`` in
+# tests/test_client.py at historical commit
+# fa9423438be4d90922eb8cafe8c7c989eb0e66bb (2026-02-26). The string
+# is an obvious test fixture exercising the api_key argument of
+# ``JuniperCascorClient``, not a real credential.
+#
+# Strategy:
+#   - This file (.gitleaks.toml) inherits the default ruleset and
+#     limits the false-positive-prone ``generic-api-key`` rule with a
+#     rule-scoped path allowlist for tests/. Every other rule
+#     (aws-keys, gcp-keys, github-pat, slack-bot-token, ssh keys,
+#     etc.) still fires on tests/ — only the heuristic rule is
+#     relaxed there.
+#   - Sibling file .gitleaksignore lists the exact historical
+#     fingerprints (commit:file:rule:line:secret) for the two findings
+#     so a full-history scan starts clean.
+#
+# When you add a new test fixture that ``generic-api-key`` matches
+# under tests/, no change here is needed — the path allowlist below
+# already covers it.
+#
+# When a NEW non-heuristic rule fires on a new fixture, prefer:
+#   1. Renaming the fixture to a less-key-like value (drop trailing
+#      digit, use "fixture-N" instead of "key-N").
+#   2. Only if that's impractical, add the rule's id to the rule list
+#      below, scoped explicitly.
+# Do NOT blanket-allow tests/ across every rule — that defeats the
+# purpose for credentials gitleaks should still catch even in tests.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key (path-allowlisted for tests/)"
+# Inherit the regex / keywords / entropy from the default ruleset.
+# The rule definition is repeated here so we can attach a
+# rule-scoped allowlist below; gitleaks merges this with the
+# default-ruleset definition keyed on `id`.
+regex = '''(?i)(?:key|api|token|secret|client|password|passwd|pwd|auth)([0-9a-z\-_\t .]{0,20})(?:[\s'|"]|:=|=)([\s'|"]?)([0-9a-zA-Z\-_=]{8,150})(\s|"|')'''
+keywords = ["key", "api", "token", "secret", "password"]
+entropy = 3.5
+
+[rules.allowlist]
+description = "Test fixtures intentionally exercise the api_key argument with literal placeholder values like 'test-key-123' or 'explicit-key-789'."
+paths = [
+  '''tests/test_.*\.py$''',
+  '''tests/conftest\.py$''',
+]
+# Belt-and-suspenders: also match the documented placeholder-token
+# patterns used across this repo's test suite.
+regexes = [
+  '''(?i)(test|env|explicit|fixture|fake|dummy|sample)-key-[0-9]+''',
+]
