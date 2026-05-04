@@ -59,13 +59,29 @@ jobs:
           pip install -e ".[test]" || pip install -e ".[dev]" || pip install -e .
 
       - name: Run slow / integration tests
+        # P-12/P-13 fix: this repo currently has no tests decorated
+        # ``@pytest.mark.slow`` or ``@pytest.mark.integration``, so
+        # ``pytest -m "slow or integration"`` exits with code 5 ("no
+        # tests collected") and fails the workflow. Once this repo grows
+        # such tests, the gate will exercise them automatically; until
+        # then, treat exit-5 as success so the schedule stays green and
+        # genuinely-failing tests still surface (any other non-zero
+        # exit is preserved as failure).
         run: |
           mkdir -p reports/junit
+          set +e
           python -m pytest \
             -m "slow or integration" \
             --tb=short \
             --maxfail=10 \
             --junitxml=reports/junit/junit-slow.xml
+          rc=$?
+          set -e
+          if [ "$rc" -eq 5 ]; then
+            echo "::notice::No slow/integration tests collected — exit 5 tolerated until this repo grows such tests."
+            exit 0
+          fi
+          exit "$rc"
 
       - name: Upload Test Results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
