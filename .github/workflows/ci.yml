@@ -121,15 +121,23 @@ jobs:
   # Unit Tests: Run unit tests with coverage enforcement
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   unit-tests:
-    name: Unit Tests + Coverage (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    # P-21 (cross-repo CI audit): align matrix with cascor / data /
+    # cascor-worker / canopy by adding a macOS leg. Pure-Python
+    # HTTP/WebSocket client — no platform-specific code paths — so the
+    # leg is a consistency check rather than a smoke test for new code.
+    name: Unit Tests + Coverage (Python ${{ matrix.python-version }} on ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     needs: [pre-commit]
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         # CC-05 / CI-01 (Phase 4E): align CI matrix with the pyproject.toml
         # classifier set, which advertises 3.14 support.
         python-version: ["3.12", "3.13", "3.14"]
+        include:
+          - os: macos-latest
+            python-version: "3.12"
 
     steps:
       - name: Checkout Code
