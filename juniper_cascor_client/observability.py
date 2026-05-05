@@ -50,15 +50,29 @@ def _ensure_counter() -> Optional[Any]:
 
     _init_attempted = True
     try:
-        from prometheus_client import Counter
+        from prometheus_client import REGISTRY, Counter
     except ImportError:
         return None
 
-    _unrecognized_counter = Counter(
-        "juniper_cascor_client_unrecognized_ws_frames_total",
-        "WS frames that failed envelope validation, by reported type and endpoint.",
-        ["type", "endpoint"],
-    )
+    metric_name = "juniper_cascor_client_unrecognized_ws_frames_total"
+    try:
+        _unrecognized_counter = Counter(
+            metric_name,
+            "WS frames that failed envelope validation, by reported type and endpoint.",
+            ["type", "endpoint"],
+        )
+    except ValueError:
+        # Already registered — typically a test that called
+        # ``reset_for_tests`` without the REGISTRY scrub, an in-process
+        # re-init, or a sibling library registering the same name.
+        # Adopt the existing collector instead of raising. ``prometheus_client``
+        # registers each Counter under both the bare name and the
+        # suffixed sample names (``_total`` / ``_created``); lookup with
+        # the name we passed returns the same object.
+        existing = REGISTRY._names_to_collectors.get(metric_name)
+        if existing is None:
+            raise
+        _unrecognized_counter = existing
     return _unrecognized_counter
 
 
