@@ -276,3 +276,90 @@ class TestCascorControlStream:
         with patch("juniper_cascor_client.ws_client.websockets.connect", new_callable=AsyncMock, return_value=mock_ws):
             async with CascorControlStream() as ctrl:
                 assert ctrl._ws is not None
+
+
+# ---------------------------------------------------------------------------
+# CC-09..12 (v7 roadmap §15) — JSON decode error handling on inbound WS frames
+# ---------------------------------------------------------------------------
+
+
+class TestJsonFrameDecodeErrors:
+    """Pins how each ``json.loads`` call site behaves when the peer sends a
+    malformed frame. Previously every call site was unguarded and a single
+    bad frame would crash the iterator (training stream) or fail every
+    pending future (control stream)."""
+
+    def test_parse_json_frame_returns_dict_on_valid_input(self):
+        from juniper_cascor_client.ws_client import _parse_json_frame
+
+        msg = _parse_json_frame('{"type": "metrics", "data": {"epoch": 1}}', endpoint="training")
+        assert msg == {"type": "metrics", "data": {"epoch": 1}}
+
+    def test_parse_json_frame_raises_with_payload_preview_on_garbage(self):
+        from juniper_cascor_client.ws_client import _parse_json_frame
+
+        with pytest.raises(JuniperCascorClientError, match="Failed to decode WebSocket frame from 'training'"):
+            _parse_json_frame("this is not json {", endpoint="training")
+
+    def test_parse_json_frame_accepts_bytes(self):
+        from juniper_cascor_client.ws_client import _parse_json_frame
+
+        msg = _parse_json_frame(b'{"type": "state"}', endpoint="control")
+        assert msg == {"type": "state"}
+
+    @pytest.mark.asyncio
+    async def test_stream_skips_malformed_frame_and_continues(self, caplog):
+        """CC-09: a malformed frame in the training stream is logged at
+        WARNING and the iterator yields the remaining valid frames. One
+        bad frame must NOT kill the stream."""
+        import logging
+
+        messages = [
+            json.dumps({"type": "metrics", "data": {"epoch": 1}}),
+            "this is not json {",  # malformed — should be dropped
+            json.dumps({"type": "state", "data": {"state": "running"}}),
+        ]
+
+        async def async_iter():
+            for m in messages:
+                yield m
+
+        mock_ws = AsyncMock()
+        mock_ws.__aiter__ = lambda self: async_iter()
+        stream = CascorTrainingStream()
+        stream._ws = mock_ws
+
+        with caplog.at_level(logging.WARNING, logger="juniper_cascor_client.ws_client"):
+            received = []
+            async for msg in stream.stream():
+                received.append(msg)
+
+        # Only the two valid frames make it through.
+        assert [m["type"] for m in received] == ["metrics", "state"]
+        # The bad frame surfaced as a warning log.
+        assert any("malformed frame" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_connect_raises_client_error_on_malformed_connection_established(self):
+        """CC-10: the connection_established handshake is one-shot. A
+        malformed frame here is a control-protocol violation, not a
+        recoverable hiccup — propagate as JuniperCascorClientError so the
+        connect() call fails cleanly."""
+        mock_ws = AsyncMock()
+        mock_ws.recv = AsyncMock(return_value="this is not json {")
+        with patch("juniper_cascor_client.ws_client.websockets.connect", new_callable=AsyncMock, return_value=mock_ws):
+            ctrl = CascorControlStream()
+            with pytest.raises(JuniperCascorClientError, match="Failed to decode WebSocket frame from 'control'"):
+                await ctrl.connect()
+
+    @pytest.mark.asyncio
+    async def test_command_raises_client_error_on_malformed_response(self):
+        """CC-11: a malformed direct-path command response is a typed
+        error, not a raw JSONDecodeError leaked from the stdlib."""
+        mock_ws = AsyncMock()
+        mock_ws.recv = AsyncMock(return_value="this is not json {")
+        ctrl = CascorControlStream()
+        ctrl._ws = mock_ws
+
+        with pytest.raises(JuniperCascorClientError, match="Failed to decode WebSocket frame from 'control'"):
+            await ctrl.command("stop")
