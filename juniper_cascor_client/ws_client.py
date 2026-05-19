@@ -7,9 +7,10 @@ with per-request correlation via ``command_id``.
 
 import asyncio
 import json
+import logging
 import os
 import uuid
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
 import websockets
 from juniper_cascor_protocol.envelope import UnknownEnvelope, validate_envelope
@@ -18,6 +19,35 @@ from websockets.asyncio.client import ClientConnection
 from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_SET_PARAMS_TIMEOUT, DEFAULT_WS_BASE_URL, MAX_PENDING_COMMANDS, WS_CONTROL_PATH, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_COMMAND_OUT, WS_MSG_TYPE_COMMAND_RESPONSE, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_TRAINING_PATH
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConnectionError, JuniperCascorOverloadError, JuniperCascorTimeoutError
 from juniper_cascor_client.observability import record_unrecognized_frame
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_json_frame(raw: Union[str, bytes], *, endpoint: str) -> Dict[str, Any]:
+    """Parse a raw WS frame as JSON, raising :class:`JuniperCascorClientError`
+    with a clear message on decode failure.
+
+    CC-09..12 (v7 roadmap §15): every prior ``json.loads(raw)`` call site
+    in this module assumed the peer sent valid JSON. A single malformed
+    frame would crash the iterator (``CascorTrainingStream.stream``) or
+    the background recv loop (``CascorControlStream._recv_loop``) and
+    fail all pending futures. This helper bounds the blast radius:
+
+    * For one-shot reads (``connect``'s ``connection_established`` frame,
+      ``command``'s direct response): callers let the exception
+      propagate as a clean ``JuniperCascorClientError``.
+    * For loop reads (the two recv loops): callers catch and continue,
+      logging the bad frame at WARNING level via :func:`logging`.
+
+    The ``endpoint`` arg (``"training"`` / ``"control"``) labels the log
+    line and is reserved for future Prometheus instrumentation parity
+    with :func:`record_unrecognized_frame`.
+    """
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        preview = raw[:200] if isinstance(raw, (str, bytes)) else repr(raw)[:200]
+        raise JuniperCascorClientError(f"Failed to decode WebSocket frame from {endpoint!r}: {e}; payload preview: {preview!r}") from e
 
 
 def _validate_and_record(message: Dict[str, Any], endpoint: str) -> Dict[str, Any]:
@@ -99,7 +129,13 @@ class CascorTrainingStream:
             raise JuniperCascorClientError("Not connected. Call connect() first.")
         try:
             async for raw in self._ws:
-                message = json.loads(raw)
+                try:
+                    message = _parse_json_frame(raw, endpoint="training")
+                except JuniperCascorClientError as e:
+                    # CC-09: skip + log the bad frame so one corrupt envelope
+                    # can't kill the entire training stream iterator.
+                    logger.warning("CascorTrainingStream: dropping malformed frame: %s", e)
+                    continue
                 # METRICS-MON R2.2.4: observational envelope validation; never raises.
                 _validate_and_record(message, endpoint="training")
                 self._dispatch(message)
@@ -220,9 +256,12 @@ class CascorControlStream:
             extra_headers[API_KEY_HEADER_NAME] = self.api_key
         try:
             self._ws = await websockets.connect(url, additional_headers=extra_headers)
-            # Read and validate the connection_established message
+            # Read and validate the connection_established message. CC-10:
+            # malformed JSON here is a control-protocol violation by the
+            # server — propagate as JuniperCascorClientError rather than
+            # crashing with a raw JSONDecodeError.
             raw = await self._ws.recv()
-            msg = json.loads(raw)
+            msg = _parse_json_frame(raw, endpoint="control")
             if msg.get("type") != WS_MSG_TYPE_CONNECTION_ESTABLISHED:
                 raise JuniperCascorClientError(f"Expected {WS_MSG_TYPE_CONNECTION_ESTABLISHED}, got: {msg.get('type', 'unknown')}")
         except (OSError, websockets.exceptions.WebSocketException) as e:
@@ -273,7 +312,9 @@ class CascorControlStream:
             message["params"] = params
         await self._ws.send(json.dumps(message))
         raw = await asyncio.wait_for(self._ws.recv(), timeout=self._timeout)
-        response = json.loads(raw)
+        # CC-11: malformed response = server-side broken contract; propagate
+        # as JuniperCascorClientError so the caller sees a typed error.
+        response = _parse_json_frame(raw, endpoint="control")
         # METRICS-MON R2.2.4: observational envelope validation; never raises.
         _validate_and_record(response, endpoint="control")
         return response
@@ -361,15 +402,23 @@ class CascorControlStream:
         try:
             while self._ws:
                 raw = await self._ws.recv()
-                msg = json.loads(raw)
+                try:
+                    msg = _parse_json_frame(raw, endpoint="control")
+                except JuniperCascorClientError as e:
+                    # CC-12: skip + log so one malformed frame can't fail
+                    # every in-flight ``set_params`` / ``command`` correlation.
+                    logger.warning("CascorControlStream: dropping malformed frame: %s", e)
+                    continue
                 # METRICS-MON R2.2.4: observational envelope validation; never raises.
                 _validate_and_record(msg, endpoint="control")
                 if msg.get("type") == WS_MSG_TYPE_COMMAND_RESPONSE:
                     cid = msg.get("data", {}).get("command_id")
                     if cid and cid in self._pending:
                         self._pending[cid].set_result(msg)
-        except (websockets.exceptions.ConnectionClosed, Exception):
-            # Fail all pending futures on disconnect (C-04)
+        except (websockets.exceptions.ConnectionClosed, OSError):
+            # Fail all pending futures on disconnect (C-04). CC-13: narrowed
+            # from ``Exception`` so unexpected programming errors propagate
+            # instead of silently failing every pending future.
             for _cid, future in list(self._pending.items()):
                 if not future.done():
                     future.set_exception(JuniperCascorConnectionError("WebSocket disconnected"))
