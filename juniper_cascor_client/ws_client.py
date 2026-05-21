@@ -101,6 +101,14 @@ class CascorTrainingStream:
         self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR)
         self._ws: Optional[ClientConnection] = None
         self._callbacks: Dict[str, List[Callable[[Dict[str, Any]], None]]] = {}
+        # ERR-14: opt-in disconnect callbacks. The stream silently ended on
+        # ``websockets.exceptions.ConnectionClosed`` historically; callers
+        # had no signal to distinguish a clean end from an unexpected drop.
+        # We now (a) always log the disconnect at WARNING and (b) dispatch
+        # to any callbacks registered via ``on_disconnect``. Default behavior
+        # of the stream generator is preserved: it still ends cleanly without
+        # re-raising, so existing callers continue to work unchanged.
+        self._disconnect_callbacks: List[Callable[[websockets.exceptions.ConnectionClosed], None]] = []
 
     async def connect(self, path: str = WS_TRAINING_PATH) -> None:
         """Connect to a WebSocket endpoint.
@@ -140,8 +148,19 @@ class CascorTrainingStream:
                 _validate_and_record(message, endpoint="training")
                 self._dispatch(message)
                 yield message
-        except websockets.exceptions.ConnectionClosed:
-            pass
+        except websockets.exceptions.ConnectionClosed as exc:
+            # ERR-14: do not silently swallow disconnects. Always log at
+            # WARNING with the close code + reason so operators can see
+            # unexpected drops, then dispatch to any ``on_disconnect``
+            # callbacks that registered for the signal. The generator
+            # still exits cleanly (no re-raise) so existing async-for
+            # consumers that treat exhaustion as "stream done" keep working.
+            logger.warning(
+                "CascorTrainingStream: WebSocket disconnected (%s: %s)",
+                type(exc).__name__,
+                exc,
+            )
+            self._dispatch_disconnect(exc)
 
     async def listen(self) -> None:
         """Listen for messages and dispatch to registered callbacks.
@@ -190,6 +209,31 @@ class CascorTrainingStream:
         """Register a callback for general event messages."""
         self._register(WS_MSG_TYPE_EVENT, callback)
 
+    def on_disconnect(self, callback: Callable[[websockets.exceptions.ConnectionClosed], None]) -> None:
+        """Register a callback to be invoked when the WebSocket disconnects (ERR-14).
+
+        The callback receives the ``websockets.exceptions.ConnectionClosed``
+        instance raised by the underlying iterator, which exposes the close
+        ``code`` and ``reason`` so reconnection / failover logic can decide
+        whether the drop was clean or unexpected.
+
+        Callbacks fire from inside :meth:`stream` (and therefore :meth:`listen`)
+        immediately before the generator exits. Callback exceptions are
+        logged at ``ERROR`` and do not prevent subsequent callbacks from
+        running.
+
+        Example::
+
+            stream = CascorTrainingStream("ws://localhost:8200")
+            stream.on_disconnect(
+                lambda exc: print(f"dropped: code={exc.code} reason={exc.reason!r}")
+            )
+            async with stream:
+                async for msg in stream:
+                    ...
+        """
+        self._disconnect_callbacks.append(callback)
+
     # ─── Context Manager ─────────────────────────────────────────────────
 
     async def __aenter__(self) -> "CascorTrainingStream":
@@ -214,6 +258,20 @@ class CascorTrainingStream:
         data = message.get("data", {})
         for callback in self._callbacks.get(msg_type, []):
             callback(data)
+
+    def _dispatch_disconnect(self, exc: websockets.exceptions.ConnectionClosed) -> None:
+        """ERR-14: invoke registered ``on_disconnect`` callbacks with ``exc``.
+
+        Each callback is wrapped in a try/except so a single misbehaving
+        listener cannot prevent subsequent listeners from running and
+        cannot mask the original disconnect by leaking an exception out of
+        :meth:`stream`.
+        """
+        for callback in self._disconnect_callbacks:
+            try:
+                callback(exc)
+            except Exception:  # noqa: BLE001 -- isolate listener faults
+                logger.exception("CascorTrainingStream: on_disconnect callback raised; continuing")
 
 
 class CascorControlStream:
