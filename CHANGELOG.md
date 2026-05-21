@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`util/test_agents_md_version_drift.py`** -- portable port of juniper-ml's lint test pinning `AGENTS.md`'s `**Version**:` header to `pyproject.toml`'s `[project].version`. Catches the failure class where a `pyproject.toml` bump leaves the agent-facing contract stale. Bundled with a one-line `AGENTS.md` bump 0.3.0 → 0.4.0 to clear the pre-existing drift this lint surfaces. Wired into the CI tests job next to the existing `test_workflow_script_paths.py` lint.
+
 - Track 5B — CI-04: Weekly security-scan workflow (`.github/workflows/security-scan.yml`) running Bandit (SAST, SARIF output) and `pip-audit --strict --desc on` against the package on a Monday-06:00-UTC cron plus `workflow_dispatch`. Mirrors the established pattern in `juniper-cascor-worker`. Reports upload as a 30-day-retention artifact.
 - Track 5B — CI-05: Lockfile update workflow (`.github/workflows/lockfile-update.yml`) that regenerates `requirements.lock` via `uv pip compile pyproject.toml --extra dev --upgrade` whenever Dependabot pushes to `dependabot/pip/**`, and commits the result back. Uses `CROSS_REPO_DISPATCH_TOKEN` so the push re-triggers CI. Mirrors the pattern in `juniper-canopy`, `juniper-data`, and `juniper-cascor`. Workflow is dormant until the first Dependabot push — `juniper-cascor-client` does not currently ship a `requirements.lock`, and the first run will create one.
 - Serena code agent integration configuration (`.serena/project.yml`)
