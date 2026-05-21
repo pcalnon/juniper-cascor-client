@@ -150,6 +150,17 @@ jobs:
           echo "╚════════════════════════════════════════════════════════════╝"
           python3 -m unittest -v util/test_workflow_script_paths.py
 
+      # Pins AGENTS.md's `**Version**:` header to pyproject.toml's
+      # [project].version so version bumps stay in sync with the
+      # agent-facing contract. Portable port of juniper-ml's
+      # tests/test_agents_md_version_drift.py (juniper-ml#305).
+      - name: Lint AGENTS.md version vs pyproject.toml
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       AGENTS.md version-drift lint                         ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          python3 -m unittest -v util/test_agents_md_version_drift.py
+
   # ═══════════════════════════════════════════════════════════════════════════════════════════════
   # Unit Tests: Run unit tests with coverage enforcement
   # ═══════════════════════════════════════════════════════════════════════════════════════════════

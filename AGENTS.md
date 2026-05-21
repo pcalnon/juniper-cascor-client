@@ -1,7 +1,7 @@
 # AGENTS.md - Juniper Cascor Client
 
 **Project**: juniper-cascor-client — HTTP/WebSocket Client for juniper-cascor
-**Version**: 0.3.0
+**Version**: 0.4.0
 **License**: MIT License
 **Author**: Paul Calnon
 **Last Updated**: 2026-04-02
