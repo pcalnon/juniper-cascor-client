@@ -166,6 +166,136 @@ class TestCascorTrainingStream:
             stream._dispatch({"type": msg_type, "data": {"test": True}})
             cb.assert_called_once_with({"test": True})
 
+    # ─── ERR-14: on_disconnect callbacks + WARNING log on drop ───────────
+
+    @pytest.mark.asyncio
+    async def test_stream_logs_warning_on_disconnect(self, caplog):
+        """ERR-14: stream() must log at WARNING when the underlying socket
+        raises ``ConnectionClosed``, instead of silently swallowing it."""
+        import logging as _logging
+
+        import websockets as _websockets
+
+        async def async_iter_then_close():
+            yield json.dumps({"type": "metrics", "timestamp": 1.0, "data": {"epoch": 1}})
+            raise _websockets.exceptions.ConnectionClosedOK(None, None)
+
+        mock_ws = AsyncMock()
+        mock_ws.__aiter__ = lambda self: async_iter_then_close()
+        stream = CascorTrainingStream()
+        stream._ws = mock_ws
+
+        caplog.set_level(_logging.WARNING, logger="juniper_cascor_client.ws_client")
+
+        received = []
+        async for msg in stream.stream():
+            received.append(msg)
+
+        assert len(received) == 1
+        # The disconnect must have produced a WARNING-level record naming
+        # the stream class, not been silently swallowed.
+        warning_records = [r for r in caplog.records if r.levelno == _logging.WARNING]
+        assert any("CascorTrainingStream: WebSocket disconnected" in r.getMessage() for r in warning_records), f"Expected a WARNING about WebSocket disconnect; got: {[r.getMessage() for r in caplog.records]}"
+
+    @pytest.mark.asyncio
+    async def test_stream_invokes_on_disconnect_callback_with_exc(self):
+        """ERR-14: on_disconnect callbacks fire with the ``ConnectionClosed``
+        instance so callers can read ``code``/``reason`` for reconnection logic."""
+        import websockets as _websockets
+
+        close_exc = _websockets.exceptions.ConnectionClosedError(None, None)
+
+        async def async_iter_then_close():
+            yield json.dumps({"type": "metrics", "timestamp": 1.0, "data": {"epoch": 1}})
+            raise close_exc
+
+        mock_ws = AsyncMock()
+        mock_ws.__aiter__ = lambda self: async_iter_then_close()
+        stream = CascorTrainingStream()
+        stream._ws = mock_ws
+
+        received_disconnects = []
+        stream.on_disconnect(lambda exc: received_disconnects.append(exc))
+
+        async for _ in stream.stream():
+            pass
+
+        assert len(received_disconnects) == 1
+        assert received_disconnects[0] is close_exc
+
+    @pytest.mark.asyncio
+    async def test_stream_invokes_multiple_on_disconnect_callbacks(self):
+        """ERR-14: all registered ``on_disconnect`` callbacks fire on a single drop."""
+        import websockets as _websockets
+
+        async def async_iter_then_close():
+            if False:  # pragma: no cover - empty stream that closes immediately
+                yield ""
+            raise _websockets.exceptions.ConnectionClosedOK(None, None)
+
+        mock_ws = AsyncMock()
+        mock_ws.__aiter__ = lambda self: async_iter_then_close()
+        stream = CascorTrainingStream()
+        stream._ws = mock_ws
+
+        cb1 = MagicMock()
+        cb2 = MagicMock()
+        stream.on_disconnect(cb1)
+        stream.on_disconnect(cb2)
+
+        async for _ in stream.stream():
+            pass
+
+        cb1.assert_called_once()
+        cb2.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stream_isolates_faulty_on_disconnect_callback(self, caplog):
+        """ERR-14: a callback that raises must not prevent subsequent
+        callbacks from running and must not leak out of ``stream()``."""
+        import logging as _logging
+
+        import websockets as _websockets
+
+        async def async_iter_then_close():
+            if False:  # pragma: no cover
+                yield ""
+            raise _websockets.exceptions.ConnectionClosedOK(None, None)
+
+        mock_ws = AsyncMock()
+        mock_ws.__aiter__ = lambda self: async_iter_then_close()
+        stream = CascorTrainingStream()
+        stream._ws = mock_ws
+
+        good_cb = MagicMock()
+
+        def bad_cb(exc):
+            raise RuntimeError("boom")
+
+        stream.on_disconnect(bad_cb)
+        stream.on_disconnect(good_cb)
+
+        caplog.set_level(_logging.ERROR, logger="juniper_cascor_client.ws_client")
+
+        # stream() must complete cleanly despite the faulty callback.
+        async for _ in stream.stream():
+            pass
+
+        good_cb.assert_called_once()
+        error_records = [r for r in caplog.records if r.levelno == _logging.ERROR]
+        assert any("on_disconnect callback raised" in r.getMessage() for r in error_records), f"Expected ERROR log about callback fault; got: {[r.getMessage() for r in caplog.records]}"
+
+    def test_on_disconnect_register_only(self):
+        """ERR-14: ``on_disconnect`` registration is idempotent in the sense
+        that multiple registrations stack and the in-memory list grows."""
+        stream = CascorTrainingStream()
+        assert stream._disconnect_callbacks == []
+        cb1 = MagicMock()
+        cb2 = MagicMock()
+        stream.on_disconnect(cb1)
+        stream.on_disconnect(cb2)
+        assert stream._disconnect_callbacks == [cb1, cb2]
+
 
 class TestCascorControlStream:
     def test_init_defaults(self):
