@@ -104,6 +104,13 @@ WS_MSG_TYPE_STATE: str = "state"
 WS_MSG_TYPE_TOPOLOGY: str = "topology"
 WS_MSG_TYPE_CASCADE_ADD: str = "cascade_add"
 WS_MSG_TYPE_EVENT: str = "event"
+# API-06 / XREPO-17: cascor server broadcasts candidate training progress
+# via ``create_candidate_progress_message`` in
+# ``juniper-cascor/src/api/websocket/messages.py:165`` (wraps the shared
+# ``CandidateProgressEnvelope`` in ``juniper-cascor-protocol``). Surfaced
+# here so consumers can register a callback via
+# ``CascorTrainingStream.on_candidate_progress(...)``.
+WS_MSG_TYPE_CANDIDATE_PROGRESS: str = "candidate_progress"
 
 # Server-emitted control-stream handshake message type.
 WS_MSG_TYPE_CONNECTION_ESTABLISHED: str = "connection_established"

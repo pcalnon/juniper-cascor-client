@@ -443,6 +443,33 @@ class TestCallbacks:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
+    async def test_on_candidate_progress_callback(self):
+        """on_candidate_progress callback receives candidate training progress data (API-06 / XREPO-17).
+
+        Pins the dispatcher path the cascor server's
+        ``create_candidate_progress_message`` frames will travel: the wire
+        type is the bare string ``"candidate_progress"`` and the inner
+        ``data`` dict (typically carrying ``candidate_id`` / ``epoch`` /
+        ``correlation`` for the candidate-training phase) is passed through
+        unchanged to the registered callback.
+        """
+        messages = [{"type": "candidate_progress", "data": {"candidate_id": 0, "epoch": 5, "correlation": 0.42}}]
+        stream = FakeCascorTrainingStream(messages=messages, delay=_TEST_DELAY)
+
+        received_data = []
+        stream.on_candidate_progress(lambda data: received_data.append(data))
+
+        await stream.connect()
+        await stream.listen()
+
+        assert len(received_data) == 1
+        assert received_data[0]["candidate_id"] == 0
+        assert received_data[0]["epoch"] == 5
+        assert received_data[0]["correlation"] == 0.42
+        await stream.disconnect()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_multiple_callbacks_same_type(self):
         """Multiple callbacks for the same message type are all invoked."""
         messages = [{"type": "metrics", "data": {"epoch": 1}}]
