@@ -16,7 +16,7 @@ import websockets
 from juniper_cascor_protocol.envelope import UnknownEnvelope, validate_envelope
 from websockets.asyncio.client import ClientConnection
 
-from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_SET_PARAMS_TIMEOUT, DEFAULT_WS_BASE_URL, MAX_PENDING_COMMANDS, WS_CONTROL_PATH, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_COMMAND_OUT, WS_MSG_TYPE_COMMAND_RESPONSE, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_TRAINING_PATH
+from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_SET_PARAMS_TIMEOUT, DEFAULT_WS_BASE_URL, MAX_PENDING_COMMANDS, WS_CONTROL_PATH, WS_MSG_TYPE_CANDIDATE_PROGRESS, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_COMMAND_OUT, WS_MSG_TYPE_COMMAND_RESPONSE, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_TRAINING_PATH
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConnectionError, JuniperCascorOverloadError, JuniperCascorTimeoutError
 from juniper_cascor_client.observability import record_unrecognized_frame
 
@@ -208,6 +208,17 @@ class CascorTrainingStream:
     def on_event(self, callback: Callable[[Dict[str, Any]], None]) -> None:
         """Register a callback for general event messages."""
         self._register(WS_MSG_TYPE_EVENT, callback)
+
+    def on_candidate_progress(self, callback: Callable[[Dict[str, Any]], None]) -> None:
+        """Register a callback for candidate training progress messages (API-06 / XREPO-17).
+
+        The cascor server broadcasts ``candidate_progress`` frames during the
+        candidate-training phase (see ``juniper-cascor`` `create_candidate_progress_message`
+        / ``CandidateProgressEnvelope`` in ``juniper-cascor-protocol``). Prior to
+        this handler, those frames passed through the dispatcher silently —
+        consumers had to attach a generic message handler to observe them.
+        """
+        self._register(WS_MSG_TYPE_CANDIDATE_PROGRESS, callback)
 
     def on_disconnect(self, callback: Callable[[websockets.exceptions.ConnectionClosed], None]) -> None:
         """Register a callback to be invoked when the WebSocket disconnects (ERR-14).

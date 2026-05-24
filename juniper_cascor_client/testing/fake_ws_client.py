@@ -172,6 +172,10 @@ class FakeCascorTrainingStream:
         """Register a callback for general event messages."""
         self._register("event", callback)
 
+    def on_candidate_progress(self, callback: Callable[[Dict[str, Any]], None]) -> None:
+        """Register a callback for candidate training progress messages (API-06 / XREPO-17)."""
+        self._register("candidate_progress", callback)
+
     # ─── Context Manager ─────────────────────────────────────────────────
 
     async def __aenter__(self) -> "FakeCascorTrainingStream":

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **API-06 / XREPO-17** (v7 roadmap §7985 / §14322): new `CascorTrainingStream.on_candidate_progress(callback)` callback registration method (and matching `FakeCascorTrainingStream.on_candidate_progress(callback)` in the `juniper_cascor_client.testing` subpackage) closes a previously-silent gap where the cascor server's `candidate_progress` WS frames (broadcast during the candidate-training phase via `juniper-cascor/src/api/websocket/messages.py:165` `create_candidate_progress_message`, wrapping the shared `CandidateProgressEnvelope` already in `juniper-cascor-protocol`) could pass through the client's dispatch loop without surfacing to a consumer-registered handler. Pure-additive change: new public method + new module-level `WS_MSG_TYPE_CANDIDATE_PROGRESS: str = "candidate_progress"` constant in `juniper_cascor_client/constants.py`. No existing public API or wire-format is touched; consumers that did not previously care about candidate-training progress are unaffected. The fake helper uses the bare string literal `"candidate_progress"` to match the existing `on_metrics` / `on_event` etc. convention in `fake_ws_client.py` (the real `ws_client.py` uses the new constant for symmetry with the other registration methods). New regression at `tests/test_fake_ws_client.py::TestFakeCascorTrainingStream::test_on_candidate_progress_callback` exercises the registration + dispatch path end-to-end with a representative payload `{"candidate_id": 0, "epoch": 5, "correlation": 0.42}`. Tracks API-06 in the v7 outstanding-development roadmap §21 (cross-references XREPO-17 in §11).
+
 ## [0.4.0] - 2026-05-23
 
 ### Changed (potentially breaking)
