@@ -46,6 +46,46 @@ class TestCascorTrainingStream:
             await stream.disconnect()
 
     @pytest.mark.asyncio
+    async def test_connect_omits_origin_when_unset(self):
+        """0.5.0 behaviour: with no ``origin=`` and no ``JUNIPER_CASCOR_WS_ORIGIN``,
+        ``websockets.connect`` is called without an ``origin`` kwarg so the
+        pre-0.5.0 machine-to-machine default (no Origin header sent) is preserved.
+        """
+        mock_ws = AsyncMock()
+        with patch("juniper_cascor_client.ws_client.websockets.connect", new_callable=AsyncMock, return_value=mock_ws) as mock_connect:
+            stream = CascorTrainingStream("ws://localhost:8200")
+            await stream.connect()
+            kwargs = mock_connect.call_args.kwargs
+            assert "origin" not in kwargs, f"origin must not be forwarded when unset; got kwargs={kwargs}"
+
+    @pytest.mark.asyncio
+    async def test_connect_forwards_origin_when_set(self):
+        """0.5.0 behaviour: explicit ``origin=...`` is forwarded to
+        ``websockets.connect`` so the cascor server's per-WS Origin policy
+        (e.g. ``/ws/training`` if a future server-side policy adds one)
+        receives the configured Origin verbatim.
+        """
+        mock_ws = AsyncMock()
+        with patch("juniper_cascor_client.ws_client.websockets.connect", new_callable=AsyncMock, return_value=mock_ws) as mock_connect:
+            stream = CascorTrainingStream("ws://localhost:8200", origin="http://juniper-canopy:8050")
+            await stream.connect()
+            kwargs = mock_connect.call_args.kwargs
+            assert kwargs.get("origin") == "http://juniper-canopy:8050"
+
+    @pytest.mark.asyncio
+    async def test_connect_picks_up_ws_origin_env_var(self, monkeypatch):
+        """0.5.0 behaviour: when ``origin=`` is not supplied, ``JUNIPER_CASCOR_WS_ORIGIN``
+        env-var fallback supplies the Origin header — symmetric with the existing
+        ``JUNIPER_CASCOR_API_KEY`` env-var fallback for ``api_key``.
+        """
+        monkeypatch.setenv("JUNIPER_CASCOR_WS_ORIGIN", "http://env-origin:8050")
+        mock_ws = AsyncMock()
+        with patch("juniper_cascor_client.ws_client.websockets.connect", new_callable=AsyncMock, return_value=mock_ws) as mock_connect:
+            stream = CascorTrainingStream("ws://localhost:8200")
+            await stream.connect()
+            assert mock_connect.call_args.kwargs.get("origin") == "http://env-origin:8050"
+
+    @pytest.mark.asyncio
     async def test_disconnect(self):
         mock_ws = AsyncMock()
         stream = CascorTrainingStream()
@@ -321,6 +361,32 @@ class TestCascorControlStream:
             await ctrl.connect()
             assert ctrl._ws is mock_ws
             await ctrl.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_connect_omits_origin_when_unset(self):
+        """0.5.0 behaviour: ``CascorControlStream`` without ``origin=`` calls
+        ``websockets.connect`` without an ``origin`` kwarg.  Preserves the
+        pre-0.5.0 behaviour for direct-Python and CLI callers.
+        """
+        mock_ws = AsyncMock()
+        mock_ws.recv = AsyncMock(return_value=json.dumps({"type": "connection_established"}))
+        with patch("juniper_cascor_client.ws_client.websockets.connect", new_callable=AsyncMock, return_value=mock_ws) as mock_connect:
+            ctrl = CascorControlStream()
+            await ctrl.connect()
+            assert "origin" not in mock_connect.call_args.kwargs
+
+    @pytest.mark.asyncio
+    async def test_connect_forwards_origin_when_set(self):
+        """0.5.0 behaviour: ``CascorControlStream(origin=...)`` forwards
+        the Origin to ``websockets.connect``. This is the canopy-side
+        unblock for the juniper-cascor#129 fail-closed Origin policy.
+        """
+        mock_ws = AsyncMock()
+        mock_ws.recv = AsyncMock(return_value=json.dumps({"type": "connection_established"}))
+        with patch("juniper_cascor_client.ws_client.websockets.connect", new_callable=AsyncMock, return_value=mock_ws) as mock_connect:
+            ctrl = CascorControlStream(origin="http://juniper-canopy:8050")
+            await ctrl.connect()
+            assert mock_connect.call_args.kwargs.get("origin") == "http://juniper-canopy:8050"
 
     @pytest.mark.asyncio
     async def test_command(self):

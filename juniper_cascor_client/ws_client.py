@@ -16,7 +16,7 @@ import websockets
 from juniper_cascor_protocol.envelope import UnknownEnvelope, validate_envelope
 from websockets.asyncio.client import ClientConnection
 
-from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_SET_PARAMS_TIMEOUT, DEFAULT_WS_BASE_URL, MAX_PENDING_COMMANDS, WS_CONTROL_PATH, WS_MSG_TYPE_CANDIDATE_PROGRESS, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_COMMAND_OUT, WS_MSG_TYPE_COMMAND_RESPONSE, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_TRAINING_PATH
+from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_SET_PARAMS_TIMEOUT, DEFAULT_WS_BASE_URL, MAX_PENDING_COMMANDS, WS_CONTROL_PATH, WS_MSG_TYPE_CANDIDATE_PROGRESS, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_COMMAND_OUT, WS_MSG_TYPE_COMMAND_RESPONSE, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_ORIGIN_ENV_VAR, WS_TRAINING_PATH
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConnectionError, JuniperCascorOverloadError, JuniperCascorTimeoutError
 from juniper_cascor_client.observability import record_unrecognized_frame
 
@@ -96,9 +96,17 @@ class CascorTrainingStream:
         self,
         base_url: str = DEFAULT_WS_BASE_URL,
         api_key: Optional[str] = None,
+        origin: Optional[str] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR)
+        # Forward Origin to `websockets.connect` when set. The Python
+        # `websockets` library omits Origin for non-browser callers; the
+        # cascor server's per-WS Origin policies (e.g. control-path
+        # fail-closed allowlist on `/ws/control`, training path) require
+        # server-to-server callers to supply it explicitly. None → preserved
+        # 0.4.x behaviour (no Origin header sent).
+        self.origin = origin or os.environ.get(WS_ORIGIN_ENV_VAR)
         self._ws: Optional[ClientConnection] = None
         self._callbacks: Dict[str, List[Callable[[Dict[str, Any]], None]]] = {}
         # ERR-14: opt-in disconnect callbacks. The stream silently ended on
@@ -120,8 +128,11 @@ class CascorTrainingStream:
         extra_headers = {}
         if self.api_key:
             extra_headers[API_KEY_HEADER_NAME] = self.api_key
+        connect_kwargs: Dict[str, Any] = {"additional_headers": extra_headers}
+        if self.origin is not None:
+            connect_kwargs["origin"] = self.origin
         try:
-            self._ws = await websockets.connect(url, additional_headers=extra_headers)
+            self._ws = await websockets.connect(url, **connect_kwargs)
         except (OSError, websockets.exceptions.WebSocketException) as e:
             raise JuniperCascorConnectionError(f"Failed to connect to {url}: {e}") from e
 
@@ -307,9 +318,15 @@ class CascorControlStream:
         base_url: str = DEFAULT_WS_BASE_URL,
         api_key: Optional[str] = None,
         timeout: float = DEFAULT_CONTROL_STREAM_TIMEOUT,
+        origin: Optional[str] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR)
+        # Forward Origin to `websockets.connect` when set. Required for
+        # server-to-server callers against cascor's `/ws/control` because
+        # juniper-cascor#129 makes the endpoint fail-closed against missing
+        # Origin. None preserves the pre-0.5.0 behaviour.
+        self.origin = origin or os.environ.get(WS_ORIGIN_ENV_VAR)
         self._ws: Optional[ClientConnection] = None
         self._timeout = timeout
 
@@ -323,8 +340,11 @@ class CascorControlStream:
         extra_headers = {}
         if self.api_key:
             extra_headers[API_KEY_HEADER_NAME] = self.api_key
+        connect_kwargs: Dict[str, Any] = {"additional_headers": extra_headers}
+        if self.origin is not None:
+            connect_kwargs["origin"] = self.origin
         try:
-            self._ws = await websockets.connect(url, additional_headers=extra_headers)
+            self._ws = await websockets.connect(url, **connect_kwargs)
             # Read and validate the connection_established message. CC-10:
             # malformed JSON here is a control-protocol violation by the
             # server — propagate as JuniperCascorClientError rather than
