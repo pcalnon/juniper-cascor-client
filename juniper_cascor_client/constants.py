@@ -47,6 +47,17 @@ DEFAULT_READY_POLL_INTERVAL: float = 0.5
 API_KEY_HEADER_NAME: str = "X-API-Key"
 API_KEY_ENV_VAR: str = "JUNIPER_CASCOR_API_KEY"
 
+# ─── WebSocket Origin ────────────────────────────────────────────────────────
+# The cascor server's `/ws/control` endpoint fail-closes against missing
+# Origin headers (juniper-cascor#129 — control-path security § origin
+# validation). The Python `websockets` library does not auto-emit Origin
+# for non-browser callers, so server-to-server callers (e.g. juniper-canopy
+# inside docker compose) must supply the configured Origin explicitly.
+# Set this env var, or pass `origin=` to `CascorControlStream` /
+# `CascorTrainingStream`, to opt in. Default (None) preserves the
+# pre-0.5.0 behaviour of sending no Origin header.
+WS_ORIGIN_ENV_VAR: str = "JUNIPER_CASCOR_WS_ORIGIN"
+
 # ─── REST Endpoints (relative to API_VERSION_PATH) ───────────────────────────
 
 # Health
