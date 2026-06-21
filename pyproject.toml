@@ -103,6 +103,7 @@ addopts = [
     "-ra",
     "-q",
     "--strict-markers",
+    "--strict-config",
     # Block pytest plugins that get auto-discovered from the active conda env
     # but are unused by this project. dash.testing.plugin transitively imports
     # psutil; if the env has a non-FT psutil wheel (abi3 landed in
@@ -116,6 +117,7 @@ markers = [
     "unit: Unit tests",
     "integration: Integration tests requiring live service",
 ]
+asyncio_mode = "auto"
 timeout = 30
 
 [tool.coverage.run]
