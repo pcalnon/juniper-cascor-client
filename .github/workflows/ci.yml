@@ -247,6 +247,7 @@ jobs:
             --cov=juniper_cascor_client \
             --cov-report=term-missing \
             --cov-report=xml:reports/coverage.xml \
+            --cov-report=json:coverage.json \
             --cov-report=html:reports/htmlcov
 
       - name: Enforce Coverage Gate
@@ -256,6 +257,20 @@ jobs:
           echo "╚════════════════════════════════════════════════════════════╝"
 
           python -m coverage report --fail-under=${COVERAGE_FAIL_UNDER}
+
+      # Per-file coverage-gap gate (juniper-ml rollout C-3): every source
+      # file must hold >= 90% statement coverage AND each sub-module must
+      # hold >= 95% pooled statement coverage. Blocking — a regression on
+      # any file fails the required unit-tests check. The mapper computes a
+      # statement basis per file (not the branch-inclusive summary percent).
+      - name: Enforce Per-File Coverage Gate (juniper-coverage-gap-map)
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║       juniper-cascor-client - Per-File Coverage Gate       ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+
+          python -m pip install "juniper-ci-tools>=0.6.0,<0.7.0"
+          juniper-coverage-gap-map --coverage-json coverage.json --enforce
 
       - name: Upload Coverage Artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

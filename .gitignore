@@ -187,6 +187,8 @@ Thumbs.db
 **/.coverage
 coverage.xml
 **/coverage.xml
+coverage.json
+**/coverage.json
 
 # Test result artifacts
 results.xml
@@ -218,6 +220,8 @@ __RESUME_CLAUDE_SESSION__
 **/.coverage
 coverage.xml
 **/coverage.xml
+coverage.json
+**/coverage.json
 
 # Test result artifacts
 results.xml
