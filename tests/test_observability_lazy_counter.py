@@ -40,7 +40,13 @@ def _clean_counter_registry():
         existing = REGISTRY._names_to_collectors.get(_METRIC_NAME)
         if existing is not None:
             REGISTRY.unregister(existing)
-    except (ImportError, KeyError):
+    except ImportError:
+        # Best-effort test teardown: if prometheus_client is unavailable,
+        # there is no registry entry to remove.
+        pass
+    except KeyError:
+        # Best-effort test teardown: collector may already be absent from
+        # the registry by the time we attempt to unregister it.
         pass
     ws_obs.reset_for_tests()
 
