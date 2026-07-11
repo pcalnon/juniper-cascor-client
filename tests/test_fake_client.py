@@ -989,3 +989,90 @@ class TestMiscellaneous:
         client.close()
         with pytest.raises(JuniperCascorClientError, match="Client is closed"):
             client.wait_for_ready()
+
+
+# ─── Private _request Escape Hatch Tests ────────────────────────────────────
+
+
+class TestPrivateRequestEscapeHatch:
+    """The fake answers the real client's private ``_request`` routes.
+
+    juniper-canopy's ``CascorServiceAdapter`` drives dataset staging and the
+    experimental-functions gate through ``client._request`` (cascor #242 —
+    no first-class client methods yet), so the fake must speak the same
+    routes with cascor-shaped response envelopes or those adapter paths
+    crash with ``AttributeError`` under the real package.
+    """
+
+    @pytest.mark.unit
+    def test_signature_matches_real_client(self):
+        """``FakeCascorClient._request`` mirrors the real client's signature."""
+        import inspect
+
+        from juniper_cascor_client.client import JuniperCascorClient
+
+        real = inspect.signature(JuniperCascorClient._request)
+        fake = inspect.signature(FakeCascorClient._request)
+        assert list(fake.parameters) == list(real.parameters), f"Signature drift: fake={list(fake.parameters)} real={list(real.parameters)}"
+
+    @pytest.mark.unit
+    def test_pending_dataset_initially_none(self, fake_idle):
+        """GET /training/dataset/pending starts with no staged config."""
+        result = fake_idle._request("GET", "/training/dataset/pending")
+        assert result["status"] == "success"
+        assert result["data"]["pending"] is None
+
+    @pytest.mark.unit
+    def test_stage_dataset_roundtrip(self, fake_idle):
+        """POST /training/dataset stages a config readable via GET pending."""
+        cfg = {"dataset_type": "spirals", "n_samples": 200, "noise": 0.15}
+        staged = fake_idle._request("POST", "/training/dataset", json=cfg)
+        assert staged["data"] == {"status": "staged", "config": cfg}
+        pending = fake_idle._request("GET", "/training/dataset/pending")
+        assert pending["data"]["pending"] == cfg
+
+    @pytest.mark.unit
+    def test_stage_with_empty_body_clears(self, fake_idle):
+        """An empty POST body clears prior staging (idempotent with DELETE)."""
+        fake_idle._request("POST", "/training/dataset", json={"dataset_type": "spirals"})
+        cleared = fake_idle._request("POST", "/training/dataset", json={})
+        assert cleared["data"] == {"status": "cleared", "config": None}
+        assert fake_idle._request("GET", "/training/dataset/pending")["data"]["pending"] is None
+
+    @pytest.mark.unit
+    def test_delete_discards_and_reports_prior(self, fake_idle):
+        """DELETE /training/dataset discards staging and echoes the prior config."""
+        cfg = {"dataset_type": "spirals"}
+        fake_idle._request("POST", "/training/dataset", json=cfg)
+        result = fake_idle._request("DELETE", "/training/dataset")
+        assert result["data"] == {"status": "cleared", "discarded": cfg}
+        again = fake_idle._request("DELETE", "/training/dataset")
+        assert again["data"] == {"status": "cleared", "discarded": None}
+
+    @pytest.mark.unit
+    def test_experimental_functions_gate_roundtrip(self, fake_idle):
+        """The admin gate starts closed, opens via POST, and reads back open."""
+        assert fake_idle._request("GET", "/admin/experimental_functions")["data"] == {"enabled": False}
+        result = fake_idle._request("POST", "/admin/experimental_functions", json={"enabled": True})
+        assert result["data"] == {"experimental_functions_enabled": True}
+        assert fake_idle._request("GET", "/admin/experimental_functions")["data"] == {"enabled": True}
+
+    @pytest.mark.unit
+    def test_unknown_route_raises_not_found(self, fake_idle):
+        """An unfaked route raises JuniperCascorNotFoundError like a real 404."""
+        with pytest.raises(JuniperCascorNotFoundError, match="no in-memory route"):
+            fake_idle._request("GET", "/no/such/route")
+
+    @pytest.mark.unit
+    def test_closed_client_raises(self, fake_idle):
+        """A closed client refuses _request like every other method."""
+        fake_idle.close()
+        with pytest.raises(JuniperCascorClientError, match="Client is closed"):
+            fake_idle._request("GET", "/training/dataset/pending")
+
+    @pytest.mark.unit
+    def test_successful_start_consumes_pending(self, fake_converged):
+        """start_training consumes staged config, mirroring cascor#396."""
+        fake_converged._request("POST", "/training/dataset", json={"dataset_type": "spirals"})
+        fake_converged.start_training()
+        assert fake_converged._request("GET", "/training/dataset/pending")["data"]["pending"] is None
