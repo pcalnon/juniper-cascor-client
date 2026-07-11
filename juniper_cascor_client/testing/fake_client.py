@@ -155,6 +155,8 @@ class FakeCascorClient:
         self._training_params: Optional[Dict[str, Any]] = None
         self._training_start_time: Optional[float] = None
         self._network_loaded: bool = self._network_config is not None
+        self._pending_dataset_config: Optional[Dict[str, Any]] = None
+        self._experimental_functions_enabled: bool = False
 
         # Populate initial metrics history for scenarios that start mid-training
         if self._epoch > 0 and self._network_config is not None:
@@ -207,6 +209,56 @@ class FakeCascorClient:
             "data": data,
             "meta": {"timestamp": time.time(), "version": FAKE_SERVICE_VERSION},
         }
+
+    # ─── Private request escape hatch ────────────────────────────────────
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        json: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """In-memory twin of ``JuniperCascorClient._request``.
+
+        juniper-canopy's ``CascorServiceAdapter`` drives the dataset-staging
+        and experimental-functions endpoints through the real client's
+        private ``_request`` escape hatch (cascor #242 — no first-class
+        client methods yet), so the fake must answer the same routes or
+        those adapter paths crash with ``AttributeError`` as soon as the
+        real package is installed. Route semantics and response ``data``
+        shapes mirror the cascor server handlers
+        (``src/api/routes/training.py`` + ``admin.py``); an unknown route
+        raises ``JuniperCascorNotFoundError`` exactly like a real 404.
+        ``params`` is accepted for signature parity and ignored — none of
+        the faked routes read query parameters.
+        """
+        self._check_closed()
+        self._maybe_raise_error("_request")
+        verb = method.upper()
+        with self._lock:
+            if path == "/training/dataset" and verb == "POST":
+                cfg = dict(json or {})
+                if not cfg:
+                    # Empty body clears any prior staging — idempotent with
+                    # DELETE, same shape the cascor route contract documents.
+                    self._pending_dataset_config = None
+                    return self._success_envelope({"status": "cleared", "config": None})
+                self._pending_dataset_config = cfg
+                return self._success_envelope({"status": "staged", "config": dict(cfg)})
+            if path == "/training/dataset" and verb == "DELETE":
+                prior = self._pending_dataset_config
+                self._pending_dataset_config = None
+                return self._success_envelope({"status": "cleared", "discarded": dict(prior) if prior else None})
+            if path == "/training/dataset/pending" and verb == "GET":
+                pending = self._pending_dataset_config
+                return self._success_envelope({"pending": dict(pending) if pending else None})
+            if path == "/admin/experimental_functions" and verb == "GET":
+                return self._success_envelope({"enabled": self._experimental_functions_enabled})
+            if path == "/admin/experimental_functions" and verb == "POST":
+                self._experimental_functions_enabled = bool((json or {}).get("enabled", False))
+                return self._success_envelope({"experimental_functions_enabled": self._experimental_functions_enabled})
+        raise JuniperCascorNotFoundError(f"FakeCascorClient has no in-memory route for {verb} {path}")
 
     # ─── Health ──────────────────────────────────────────────────────────
 
@@ -436,6 +488,10 @@ class FakeCascorClient:
             self._epoch = 0
             self._metrics_history = []
             self._training_start_time = time.time()
+            # The real cascor consumes any staged dataset config at start
+            # (cascor#396); mirror the consumption so the canopy pending
+            # banner clears after a successful start.
+            self._pending_dataset_config = None
 
             return self._success_envelope(
                 {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-11
+
+### Added
+
+- **`FakeCascorClient._request` — in-memory parity for the real client's private escape hatch.** juniper-canopy's `CascorServiceAdapter` drives the cascor dataset-staging and experimental-functions endpoints through `JuniperCascorClient._request` (the "public-but-private" escape hatch documented in cascor #242 — the client still has no first-class methods for those routes), and canopy #438 put that path on canopy's trivial-case Start-Training flow (`_ensure_first_start_dataset` → `get_pending_dataset()` / `stage_dataset()`). The fake previously did not implement `_request` at all, so any canopy test driving `ServiceBackend.start_training()` against `FakeCascorClient` crashed with `AttributeError: 'FakeCascorClient' object has no attribute '_request'` the moment the real `juniper-cascor-client` package was installed (canopy's CI conftest stub masks the gap — its `juniper_cascor_client.testing` importorskip means the affected tests only run against the real package, i.e. on developer machines). The new method mirrors the real signature (`method, path, json=None, params=None`; signature parity pinned by a new conformance test) and answers the five routes canopy drives, with response `data` shapes copied from the cascor server handlers (`src/api/routes/training.py` + `admin.py`): `POST /training/dataset` (stage; empty body clears, `{"status": "staged"|"cleared", "config": ...}`), `DELETE /training/dataset` (`{"status": "cleared", "discarded": <prior-or-null>}`), `GET /training/dataset/pending` (`{"pending": <cfg-or-null>}`), and `GET`/`POST /admin/experimental_functions` (`{"enabled": bool}` / `{"experimental_functions_enabled": bool}`). Unknown routes raise `JuniperCascorNotFoundError` exactly like a real 404; closed-client and `error_prone`-scenario injection behave like every other fake method. `FakeCascorClient.start_training` now also **consumes** any staged config on a successful start, mirroring cascor #396's consume-on-start so the canopy pending banner clears after a start. New regression class `tests/test_fake_client.py::TestPrivateRequestEscapeHatch` (9 tests) pins the signature parity, all five route round-trips, the 404 behaviour, closed-client refusal, and the consume-on-start. Pure-additive: no existing public API or wire shape is touched.
+
 ## [0.5.0] - 2026-05-29
 
 ### Added

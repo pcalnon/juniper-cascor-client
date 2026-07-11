@@ -4,7 +4,7 @@
 **Repository**: pcalnon/juniper-cascor-client
 **Author**: Paul Calnon
 **License**: MIT License
-**Version**: 0.5.0
+**Version**: 0.6.0
 **Last Updated**: 2026-05-29
 
 ---
