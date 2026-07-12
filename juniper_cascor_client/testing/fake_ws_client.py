@@ -95,6 +95,8 @@ class FakeCascorTrainingStream:
             path: WebSocket path (default: /ws/training).
         """
         self._connected = True
+        # CL1 parity: a successful connect is the first liveness evidence.
+        self._mark_inbound_frame()
         # Load pre-configured messages into the async queue
         if not self._initial_loaded:
             for msg in self._messages:
