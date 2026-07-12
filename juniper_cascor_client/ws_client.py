@@ -3,20 +3,41 @@
 Provides async iteration over training metrics, state changes, topology
 updates, and cascade events. Also supports sending control commands
 with per-request correlation via ``command_id``.
+
+CL1 — heartbeat handling + liveness surfaces (the cascor C3 contract):
+
+The cascor server sends an application-level ``{"type":"ping","ts":<float>}``
+on both ``/ws/training`` and ``/ws/control`` every ``ws_heartbeat_interval_sec``
+(default 30s) and closes the connection (1011, "Heartbeat timeout") when the
+client sends nothing within ``ws_heartbeat_pong_timeout_sec`` (default 10s) of
+a ping. Both stream classes now:
+
+* answer pings automatically with ``{"type":"pong"}`` (``auto_pong=True``
+  default; the control stream starts its background recv loop at connect time
+  so pings are answered even before the first command),
+* treat ``ping`` as a RECOGNIZED transport frame (no more
+  ``unrecognized_ws_frame`` warning spam — one warning per ~30s per stream in
+  the 2026-07-10 incident, with no ``type`` in the message text), and
+* expose a liveness surface for supervisors: :attr:`is_connected` (transport
+  state — detects processed closes), :meth:`is_alive` (frame recency — detects
+  half-open sockets that ``is_connected`` alone cannot), and
+  :attr:`last_frame_at` / :attr:`pongs_sent` for display and diagnostics.
 """
 
 import asyncio
 import json
 import logging
 import os
+import time
 import uuid
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
 import websockets
 from juniper_cascor_protocol.envelope import UnknownEnvelope, validate_envelope
 from websockets.asyncio.client import ClientConnection
+from websockets.protocol import State
 
-from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_SET_PARAMS_TIMEOUT, DEFAULT_WS_BASE_URL, MAX_PENDING_COMMANDS, WS_CONTROL_PATH, WS_MSG_TYPE_CANDIDATE_PROGRESS, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_COMMAND_OUT, WS_MSG_TYPE_COMMAND_RESPONSE, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_ORIGIN_ENV_VAR, WS_TRAINING_PATH
+from juniper_cascor_client.constants import API_KEY_ENV_VAR, API_KEY_HEADER_NAME, DEFAULT_CONTROL_STREAM_TIMEOUT, DEFAULT_LIVENESS_WINDOW_SEC, DEFAULT_SET_PARAMS_TIMEOUT, DEFAULT_WS_BASE_URL, MAX_PENDING_COMMANDS, WS_CONTROL_PATH, WS_MSG_TYPE_CANDIDATE_PROGRESS, WS_MSG_TYPE_CASCADE_ADD, WS_MSG_TYPE_COMMAND_OUT, WS_MSG_TYPE_COMMAND_RESPONSE, WS_MSG_TYPE_CONNECTION_ESTABLISHED, WS_MSG_TYPE_EVENT, WS_MSG_TYPE_METRICS, WS_MSG_TYPE_PING, WS_MSG_TYPE_PONG, WS_MSG_TYPE_STATE, WS_MSG_TYPE_TOPOLOGY, WS_ORIGIN_ENV_VAR, WS_TRAINING_PATH
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConnectionError, JuniperCascorOverloadError, JuniperCascorTimeoutError
 from juniper_cascor_client.observability import record_unrecognized_frame
 
@@ -72,6 +93,104 @@ def _validate_and_record(message: Dict[str, Any], endpoint: str) -> Dict[str, An
     if isinstance(envelope, UnknownEnvelope):
         record_unrecognized_frame(envelope.type, endpoint)
     return message
+
+
+class _WsLivenessMixin:
+    """Connection-liveness bookkeeping shared by the two stream classes (CL1).
+
+    Two complementary signals, designed as the seam canopy's supervisor
+    hardening (plan unit N2) consumes:
+
+    * :attr:`is_connected` — the transport view: the underlying ``websockets``
+      connection exists and its protocol state is OPEN. Detects processed
+      closes (e.g. the server's 1011 heartbeat-timeout close), which the
+      historical ``_ws is not None`` idiom could not.
+    * :meth:`is_alive` — the traffic view: connected AND at least one inbound
+      frame within the window. Detects HALF-OPEN sockets (peer gone without a
+      close frame reaching us) that ``is_connected`` alone cannot, because a
+      dead TCP peer leaves the local protocol state OPEN. Against a healthy
+      cascor the server heartbeat guarantees at least one frame per
+      ``ws_heartbeat_interval_sec`` (default 30s), so the default 90s window
+      is three missed heartbeats.
+
+    ``connect()`` marks the connection itself as the first liveness evidence,
+    so ``is_alive`` is True immediately after a successful connect.
+    """
+
+    _ws: Optional[ClientConnection]
+    _last_frame_monotonic: Optional[float]
+    _last_frame_wall: Optional[float]
+    _pongs_sent: int
+    _auto_pong: bool
+
+    def _init_liveness(self, auto_pong: bool) -> None:
+        """Initialize liveness state; call from ``__init__``."""
+        self._last_frame_monotonic = None
+        self._last_frame_wall = None
+        self._pongs_sent = 0
+        self._auto_pong = auto_pong
+
+    def _mark_inbound_frame(self) -> None:
+        """Record inbound activity (any frame, including pings)."""
+        self._last_frame_monotonic = time.monotonic()
+        self._last_frame_wall = time.time()
+
+    async def _send_pong(self) -> None:
+        """Answer a server heartbeat ping with ``{"type": "pong"}``.
+
+        Best-effort: a send failure (connection tearing down) is logged at
+        DEBUG and never propagates — the surrounding recv path will surface
+        the disconnect through its own machinery.
+        """
+        ws = self._ws
+        if ws is None:
+            return
+        try:
+            await ws.send(json.dumps({"type": WS_MSG_TYPE_PONG}))
+            self._pongs_sent += 1
+        except Exception:  # noqa: BLE001 — pong is best-effort by design
+            logger.debug("auto-pong send failed (connection closing?)", exc_info=True)
+
+    @property
+    def last_frame_at(self) -> Optional[float]:
+        """Wall-clock epoch seconds of the last inbound frame (None before connect)."""
+        return self._last_frame_wall
+
+    @property
+    def pongs_sent(self) -> int:
+        """Count of automatic pong replies sent on this connection object."""
+        return self._pongs_sent
+
+    @property
+    def is_connected(self) -> bool:
+        """True when the underlying WebSocket exists and its protocol state is OPEN.
+
+        Falls back to presence-only (the pre-CL1 semantics) when the
+        underlying object does not expose a ``state`` attribute (e.g. plain
+        test doubles).
+        """
+        ws = self._ws
+        if ws is None:
+            return False
+        state = getattr(ws, "state", None)
+        if state is None:
+            return True
+        return bool(state is State.OPEN)
+
+    def is_alive(self, window_sec: float = DEFAULT_LIVENESS_WINDOW_SEC) -> bool:
+        """True when connected AND an inbound frame arrived within ``window_sec``.
+
+        The half-open detector: a connection whose peer silently died keeps
+        ``is_connected`` True but stops producing frames — with the cascor
+        heartbeat pinging every 30s, silence longer than the window (default
+        90s = three missed heartbeats) marks the socket dead. Supervisors
+        should reconnect when this returns False.
+        """
+        if not self.is_connected:
+            return False
+        if self._last_frame_monotonic is None:
+            return False
+        return (time.monotonic() - self._last_frame_monotonic) <= window_sec
 
 
 class CascorTrainingStream:

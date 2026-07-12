@@ -11,7 +11,7 @@ Project: Juniper
 Sub-Project: juniper-cascor-client
 Application: JuniperCascorClient
 Author: Paul Calnon
-Version: 0.3.0
+Version: 0.7.0
 License: MIT License
 """
 
@@ -128,6 +128,27 @@ WS_MSG_TYPE_CONNECTION_ESTABLISHED: str = "connection_established"
 
 # Server-emitted command response (echoes command_id for correlation).
 WS_MSG_TYPE_COMMAND_RESPONSE: str = "command_response"
+
+# ─── WebSocket Heartbeat (CL1 — cascor C3 contract) ─────────────────────────
+
+# The cascor server sends an application-level ``{"type":"ping","ts":<float>}``
+# on /ws/training and /ws/control every ``ws_heartbeat_interval_sec`` (default
+# 30s) and closes the connection (code 1011, "Heartbeat timeout") when the
+# client sends nothing within ``ws_heartbeat_pong_timeout_sec`` (default 10s)
+# of a ping. CascorTrainingStream / CascorControlStream answer these pings
+# automatically with ``{"type":"pong"}`` (``auto_pong=True`` default); the
+# 2026-07-10 incident (canopy's control WS silently killed 40s after connect,
+# then held as a half-open corpse for 12+ hours) traces to this layer
+# previously implementing no ping handling at all.
+WS_MSG_TYPE_PING: str = "ping"
+WS_MSG_TYPE_PONG: str = "pong"
+
+# Default window for ``is_alive()``: 3x the server's 30s heartbeat interval,
+# so a healthy socket (which sees at least one ping per interval) is never
+# reported dead, while a genuinely silent one is flagged within ~3 missed
+# heartbeats. Consumers with different server settings should pass their own
+# window.
+DEFAULT_LIVENESS_WINDOW_SEC: float = 90.0
 
 # ─── WebSocket set_params Defaults ──────────────────────────────────────────
 
