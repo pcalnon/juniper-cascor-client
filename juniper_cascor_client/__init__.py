@@ -8,7 +8,10 @@ from juniper_cascor_client.client import JuniperCascorClient
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorOverloadError, JuniperCascorServiceUnavailableError, JuniperCascorTimeoutError, JuniperCascorValidationError
 from juniper_cascor_client.ws_client import CascorControlStream, CascorTrainingStream
 
-__version__ = "0.4.0"
+# Kept in lockstep with [project].version in pyproject.toml (CL1 also fixed a
+# pre-existing drift where this constant had been left at 0.4.0 while the
+# package shipped 0.5.x/0.6.x).
+__version__ = "0.7.0"
 
 __all__ = [
     "JuniperCascorClient",

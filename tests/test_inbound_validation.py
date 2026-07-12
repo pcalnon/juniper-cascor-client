@@ -88,7 +88,11 @@ class TestValidateAndRecord:
         warnings = [rec for rec in caplog.records if rec.levelno == logging.WARNING]
         assert len(warnings) >= 1
         rec = warnings[-1]
-        assert rec.message == "juniper_cascor_client_unrecognized_ws_frame"
+        # CL1: the type + endpoint are part of the MESSAGE text (previously
+        # only in ``extra``, which standard formatters drop — the incident's
+        # zero-diagnostic-value warning spam); the stable prefix is preserved
+        # for log-grep continuity.
+        assert rec.message == "juniper_cascor_client_unrecognized_ws_frame type=garbage_xyz endpoint=training"
         assert getattr(rec, "type", None) == "garbage_xyz"
         assert getattr(rec, "endpoint", None) == "training"
 
@@ -180,7 +184,9 @@ async def test_stream_yields_through_malformed_frames(caplog):
 
     # The malformed frames produced WARNING log lines.
     warnings = [rec for rec in caplog.records if rec.levelno == logging.WARNING]
-    types_warned = sorted({getattr(rec, "type", None) for rec in warnings if rec.message == "juniper_cascor_client_unrecognized_ws_frame"})
+    # CL1: the warning message now carries ``type=... endpoint=...`` after the
+    # stable grep prefix, so match on the prefix.
+    types_warned = sorted({getattr(rec, "type", None) for rec in warnings if rec.message.startswith("juniper_cascor_client_unrecognized_ws_frame")})
     # Both ``garbage_one`` (unknown type) and ``initial_metrics`` (known
     # type, invalid payload) should each have raised exactly one warning.
     assert "garbage_one" in types_warned

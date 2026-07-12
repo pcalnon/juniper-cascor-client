@@ -132,6 +132,17 @@ class FakeCascorTrainingStream:
                 # Sentinel: stream ended
                 break
 
+            # CL1 parity: any inbound frame proves liveness; heartbeat pings
+            # are consumed by the (fake) transport layer under auto_pong,
+            # exactly like the real CascorTrainingStream.
+            self._mark_inbound_frame()
+            if isinstance(message, dict) and message.get("type") == WS_MSG_TYPE_PING:
+                if self._auto_pong:
+                    self._pongs_sent += 1
+                    continue
+                yield message
+                continue
+
             self._dispatch(message)
 
             if self._delay > 0:
@@ -231,7 +242,37 @@ class FakeCascorTrainingStream:
             # If not yet connected, add to the pre-load list
             self._messages.append(msg_copy)
 
+    # ─── Liveness Surface (CL1 parity with CascorTrainingStream) ─────────
+
+    @property
+    def last_frame_at(self) -> Optional[float]:
+        """Wall-clock epoch seconds of the last (fake) inbound frame."""
+        return self._last_frame_wall
+
+    @property
+    def pongs_sent(self) -> int:
+        """Count of heartbeat pings the fake transport layer consumed/answered."""
+        return self._pongs_sent
+
+    @property
+    def is_connected(self) -> bool:
+        """True while the fake connection is open (parity with the real stream)."""
+        return self._connected
+
+    def is_alive(self, window_sec: float = DEFAULT_LIVENESS_WINDOW_SEC) -> bool:
+        """True when connected AND a frame arrived within ``window_sec`` (parity)."""
+        if not self.is_connected:
+            return False
+        if self._last_frame_monotonic is None:
+            return False
+        return (time.monotonic() - self._last_frame_monotonic) <= window_sec
+
     # ─── Internal ────────────────────────────────────────────────────────
+
+    def _mark_inbound_frame(self) -> None:
+        """Record inbound activity (CL1 parity with the real stream)."""
+        self._last_frame_monotonic = time.monotonic()
+        self._last_frame_wall = time.time()
 
     def _register(self, message_type: str, callback: Callable[[Dict[str, Any]], None]) -> None:
         """Register a callback for a specific message type."""

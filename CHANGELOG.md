@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-11
+
+### Added
+
+- **CL1 — WebSocket heartbeat handling (root fix for the 40s control-WS kill).** The cascor server (C3 contract; heartbeat shipped in cascor#133) sends an application-level `{"type":"ping","ts":<float>}` on both `/ws/training` and `/ws/control` every `ws_heartbeat_interval_sec` (default 30s) and closes the connection when the client sends nothing within `ws_heartbeat_pong_timeout_sec` (default 10s) of a ping. This client implemented no ping handling at all: on `/ws/control` nothing even read the socket until the first `set_params` (the recv loop started lazily), so an idle control connection was killed 40s after connect — the 2026-07-10 incident, where canopy's control WS died at 18:17:03 and every hot-parameter push for the next 12+ hours burned its WS window against the half-open corpse before falling back to REST. Both stream classes now answer pings automatically with `{"type":"pong"}` (`auto_pong: bool = True` constructor kwarg on `CascorTrainingStream` and `CascorControlStream`; `auto_pong=False` restores the legacy yield-the-ping behaviour for consumers that reply themselves), and `CascorControlStream.connect()` starts the background recv loop eagerly so pings are answered from the moment the connection exists (`command()` consequently always routes through the `command_id` correlation path after `connect()`; the direct-recv path remains as a fallback and now skips/answers pings so a ping can never be returned as a command response). New constants `WS_MSG_TYPE_PING` / `WS_MSG_TYPE_PONG`.
+- **Liveness surface for consumers (the seam canopy's supervisor hardening consumes).** Both stream classes (and `FakeCascorTrainingStream`) expose: `is_connected` (property — underlying `websockets` protocol state is OPEN; detects processed closes, which the historical `_ws is not None` idiom could not), `is_alive(window_sec=DEFAULT_LIVENESS_WINDOW_SEC)` (connected AND at least one inbound frame within the window — detects half-open sockets that `is_connected` alone cannot; default window 90s = three missed 30s server heartbeats), `last_frame_at` (wall-clock epoch seconds of the last inbound frame), and `pongs_sent` (count of automatic pong replies). A successful `connect()` counts as the first liveness evidence.
+
+### Changed
+
+- **`ping` is a recognized transport frame — no more per-30s `unrecognized_ws_frame` spam.** Heartbeat pings are consumed by the transport layer before envelope validation, so they no longer emit `juniper_cascor_client_unrecognized_ws_frame` warnings (~2,400 of them in the 2026-07-10 session, mirrored again by canopy's relay) nor increment the unrecognized-frame counter.
+- **Unrecognized-frame warnings now carry the frame type in the message text.** `record_unrecognized_frame` logs `juniper_cascor_client_unrecognized_ws_frame type=<type> endpoint=<endpoint>` instead of the bare constant string whose diagnostic payload lived only in the `extra` dict (dropped by standard `%(message)s` formatters — the incident's thousands of zero-diagnostic-value warnings). The stable prefix is preserved for log-grep continuity; the Prometheus counter and `extra` keys are unchanged.
+- **`FakeCascorTrainingStream` parity (the #91 lesson):** accepts `auto_pong`, consumes injected `{"type":"ping"}` frames (counted in `pongs_sent`, never yielded) under the default posture, yields them under `auto_pong=False`, and implements the full liveness surface (`is_connected` / `is_alive` / `last_frame_at` / `pongs_sent`).
+- `__init__.__version__` corrected to match `[project].version` (had been left at `0.4.0` while the package shipped 0.5.x/0.6.x).
+
+### Compatibility
+
+- New client against old server (heartbeat present since cascor#133): pongs are answered as the server always expected — strictly better. Old client against new server (cascor C3): unchanged failure mode for idle control connections (closed after the pong window; C3 makes the close observable with a valid close code + reason instead of a silent half-open), and canopy's relay keeps `/ws/training` alive via its own pong workaround, which the new client makes redundant (the relay simply never sees pings anymore). No wire-format or public-API removals; pure-additive surfaces.
+
 ## [0.6.0] - 2026-07-11
 
 ### Added
