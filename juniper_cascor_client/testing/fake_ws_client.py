@@ -4,19 +4,27 @@ Provides an in-memory fake of CascorTrainingStream that yields pre-configured
 messages on demand. Supports callback APIs, async iteration, and message
 injection for testing.
 
+CL1 parity: mirrors the real client's heartbeat handling and liveness
+surfaces — injected ``{"type": "ping"}`` frames are consumed by the fake
+transport layer (counted in :attr:`pongs_sent`, never yielded) under the
+default ``auto_pong=True``, and :attr:`is_connected` / :attr:`last_frame_at`
+/ :meth:`is_alive` behave like the real stream's surfaces so consumer
+supervision logic can be tested against the fake.
+
 Project: Juniper
 Sub-Project: juniper-cascor-client
 Application: FakeCascorTrainingStream
 Author: Paul Calnon
-Version: 0.1.0
+Version: 0.7.0
 License: MIT License
 """
 
 import asyncio
 import copy
+import time
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
-from juniper_cascor_client.constants import WS_MSG_TYPE_COMMAND_OUT
+from juniper_cascor_client.constants import DEFAULT_LIVENESS_WINDOW_SEC, WS_MSG_TYPE_COMMAND_OUT, WS_MSG_TYPE_PING
 from juniper_cascor_client.exceptions import JuniperCascorClientError
 
 
@@ -54,6 +62,7 @@ class FakeCascorTrainingStream:
         delay: float = 0.1,
         base_url: str = "ws://fake-cascor:8200",
         api_key: Optional[str] = None,
+        auto_pong: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -61,6 +70,12 @@ class FakeCascorTrainingStream:
         self._connected = False
         self._callbacks: Dict[str, List[Callable[[Dict[str, Any]], None]]] = {}
         self._sent_commands: List[Dict[str, Any]] = []
+        # CL1 parity: heartbeat auto-pong posture + liveness bookkeeping,
+        # mirroring the real CascorTrainingStream surfaces.
+        self._auto_pong = auto_pong
+        self._last_frame_monotonic: Optional[float] = None
+        self._last_frame_wall: Optional[float] = None
+        self._pongs_sent: int = 0
 
         # Internal message queue: pre-loaded messages + injected messages
         self._messages: List[Dict[str, Any]] = []
