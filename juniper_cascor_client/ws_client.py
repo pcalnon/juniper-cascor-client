@@ -265,6 +265,8 @@ class CascorTrainingStream(_WsLivenessMixin):
             self._ws = await websockets.connect(url, **connect_kwargs)
         except (OSError, websockets.exceptions.WebSocketException) as e:
             raise JuniperCascorConnectionError(f"Failed to connect to {url}: {e}") from e
+        # CL1: a successful connect is the first liveness evidence.
+        self._mark_inbound_frame()
 
     async def disconnect(self) -> None:
         """Close the WebSocket connection."""
@@ -273,17 +275,38 @@ class CascorTrainingStream(_WsLivenessMixin):
             self._ws = None
 
     async def stream(self) -> AsyncIterator[Dict[str, Any]]:
-        """Yield messages from the WebSocket as they arrive."""
+        """Yield messages from the WebSocket as they arrive.
+
+        CL1: server heartbeat ``ping`` frames are handled by the transport
+        layer — answered with a pong and consumed — under the default
+        ``auto_pong=True``; with ``auto_pong=False`` they are yielded to the
+        consumer (legacy behaviour) but in both cases they are RECOGNIZED
+        (no ``unrecognized_ws_frame`` warning).
+        """
         if not self._ws:
             raise JuniperCascorClientError("Not connected. Call connect() first.")
         try:
             async for raw in self._ws:
+                # CL1: any inbound frame (even a malformed one) proves the
+                # peer is alive.
+                self._mark_inbound_frame()
                 try:
                     message = _parse_json_frame(raw, endpoint="training")
                 except JuniperCascorClientError as e:
                     # CC-09: skip + log the bad frame so one corrupt envelope
                     # can't kill the entire training stream iterator.
                     logger.warning("CascorTrainingStream: dropping malformed frame: %s", e)
+                    continue
+                if isinstance(message, dict) and message.get("type") == WS_MSG_TYPE_PING:
+                    # CL1: recognized transport heartbeat — never validated as
+                    # an application envelope (kills the per-30s
+                    # unrecognized_ws_frame warning spam).
+                    if self._auto_pong:
+                        await self._send_pong()
+                        continue
+                    # Legacy posture: the consumer sees the ping and must
+                    # reply itself (pre-CL1 canopy relay behaviour).
+                    yield message
                     continue
                 # METRICS-MON R2.2.4: observational envelope validation; never raises.
                 _validate_and_record(message, endpoint="training")
@@ -426,11 +449,21 @@ class CascorTrainingStream(_WsLivenessMixin):
                 logger.exception("CascorTrainingStream: on_disconnect callback raised; continuing")
 
 
-class CascorControlStream:
+class CascorControlStream(_WsLivenessMixin):
     """Async WebSocket client for sending training control commands.
 
     Connects to /ws/control for bidirectional command/response communication.
     Supports per-request correlation via ``command_id`` for concurrent callers.
+
+    CL1: the background recv loop starts at ``connect()`` (not lazily on the
+    first correlated command) and answers server heartbeat pings with
+    ``{"type": "pong"}``. Pre-CL1, nothing read the socket between connect
+    and the first ``set_params`` and nothing ever answered pings, so cascor's
+    heartbeat closed the connection 40s after connect (30s ping interval +
+    10s pong window) — the 2026-07-10 incident that left canopy pushing every
+    hot-parameter update at a half-open corpse for 12+ hours. Because the
+    recv loop is always running, ``command()`` now always routes through the
+    ``command_id`` correlation path after ``connect()``.
 
     Example:
         >>> async with CascorControlStream("ws://localhost:8200") as ctrl:
@@ -449,6 +482,7 @@ class CascorControlStream:
         api_key: Optional[str] = None,
         timeout: float = DEFAULT_CONTROL_STREAM_TIMEOUT,
         origin: Optional[str] = None,
+        auto_pong: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR)
@@ -459,13 +493,20 @@ class CascorControlStream:
         self.origin = origin or os.environ.get(WS_ORIGIN_ENV_VAR)
         self._ws: Optional[ClientConnection] = None
         self._timeout = timeout
+        # CL1: liveness bookkeeping + heartbeat auto-pong posture.
+        self._init_liveness(auto_pong)
 
         # Correlation state for set_params (and future correlated commands)
         self._pending: Dict[str, "asyncio.Future[Dict[str, Any]]"] = {}
         self._recv_task: Optional["asyncio.Task[None]"] = None
 
     async def connect(self) -> None:
-        """Connect to the /ws/control endpoint."""
+        """Connect to the /ws/control endpoint.
+
+        CL1: starts the background recv loop immediately so server heartbeat
+        pings are answered from the moment the connection exists — a control
+        stream that connects and then idles no longer dies 40s later.
+        """
         url = f"{self.base_url}{WS_CONTROL_PATH}"
         extra_headers = {}
         if self.api_key:
@@ -485,6 +526,10 @@ class CascorControlStream:
                 raise JuniperCascorClientError(f"Expected {WS_MSG_TYPE_CONNECTION_ESTABLISHED}, got: {msg.get('type', 'unknown')}")
         except (OSError, websockets.exceptions.WebSocketException) as e:
             raise JuniperCascorConnectionError(f"Failed to connect to {url}: {e}") from e
+        # CL1: handshake received — first liveness evidence; then keep the
+        # socket read (and pings answered) from t0.
+        self._mark_inbound_frame()
+        await self._ensure_recv_task()
 
     async def disconnect(self) -> None:
         """Close the WebSocket connection."""
@@ -502,8 +547,12 @@ class CascorControlStream:
     async def command(self, command: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Send a command and wait for the response.
 
-        If the background recv task is active (started by ``set_params``),
-        routes through the correlation system. Otherwise uses direct recv.
+        If the background recv task is active — CL1 starts it at ``connect()``,
+        so this is the normal case — routes through the ``command_id``
+        correlation system. The direct-recv path remains as a fallback for
+        callers that attached a socket without ``connect()`` or whose recv
+        task has exited; it skips (and answers) heartbeat pings so a ping can
+        never be returned as the command's response.
 
         Args:
             command: Command name (start, stop, pause, resume, reset).
@@ -530,13 +579,34 @@ class CascorControlStream:
         if params:
             message["params"] = params
         await self._ws.send(json.dumps(message))
-        raw = await asyncio.wait_for(self._ws.recv(), timeout=self._timeout)
-        # CC-11: malformed response = server-side broken contract; propagate
-        # as JuniperCascorClientError so the caller sees a typed error.
-        response = _parse_json_frame(raw, endpoint="control")
+        # CL1: skip (and answer) any heartbeat pings that arrive ahead of the
+        # response — pre-CL1 the direct path would have returned a ping frame
+        # as the command's "response". The whole skip loop shares the single
+        # timeout budget.
+        response = await asyncio.wait_for(self._recv_skipping_pings(), timeout=self._timeout)
         # METRICS-MON R2.2.4: observational envelope validation; never raises.
         _validate_and_record(response, endpoint="control")
         return response
+
+    async def _recv_skipping_pings(self) -> Dict[str, Any]:
+        """Receive the next non-ping frame on the direct (uncorrelated) path.
+
+        CL1: heartbeat pings are answered (under ``auto_pong``) and consumed;
+        every inbound frame updates the liveness clock. CC-11: malformed JSON
+        propagates as :class:`JuniperCascorClientError` (a server-side broken
+        contract on this one-shot read path).
+        """
+        while True:
+            if self._ws is None:
+                raise JuniperCascorClientError("Not connected. Call connect() first.")
+            raw = await self._ws.recv()
+            self._mark_inbound_frame()
+            response = _parse_json_frame(raw, endpoint="control")
+            if isinstance(response, dict) and response.get("type") == WS_MSG_TYPE_PING:
+                if self._auto_pong:
+                    await self._send_pong()
+                continue
+            return response
 
     async def set_params(
         self,
@@ -617,16 +687,33 @@ class CascorControlStream:
             self._recv_task = asyncio.create_task(self._recv_loop())
 
     async def _recv_loop(self) -> None:
-        """Background task: route incoming messages to pending futures by command_id."""
+        """Background task: answer pings and route responses to pending futures.
+
+        CL1: runs from ``connect()`` onward (see :meth:`connect`). Heartbeat
+        ``ping`` frames are answered with a pong (under ``auto_pong``) and
+        consumed BEFORE envelope validation, so they are never logged as
+        unrecognized. Every inbound frame updates the liveness clock. The
+        ``asyncio.sleep(0)`` guarantees a scheduling/cancellation point per
+        iteration even when ``recv()`` resolves without suspending (as
+        immediate-result test doubles do).
+        """
         try:
             while self._ws:
+                await asyncio.sleep(0)
                 raw = await self._ws.recv()
+                self._mark_inbound_frame()
                 try:
                     msg = _parse_json_frame(raw, endpoint="control")
                 except JuniperCascorClientError as e:
                     # CC-12: skip + log so one malformed frame can't fail
                     # every in-flight ``set_params`` / ``command`` correlation.
                     logger.warning("CascorControlStream: dropping malformed frame: %s", e)
+                    continue
+                if isinstance(msg, dict) and msg.get("type") == WS_MSG_TYPE_PING:
+                    # CL1: recognized transport heartbeat — the root fix for
+                    # the 40s control-WS kill.
+                    if self._auto_pong:
+                        await self._send_pong()
                     continue
                 # METRICS-MON R2.2.4: observational envelope validation; never raises.
                 _validate_and_record(msg, endpoint="control")

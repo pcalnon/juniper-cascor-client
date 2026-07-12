@@ -82,6 +82,15 @@ def record_unrecognized_frame(type_label: str, endpoint: str) -> None:
     Always emits a structured WARNING log line; additionally increments
     the Prometheus counter when ``prometheus-client`` is installed.
 
+    CL1: the frame ``type`` and ``endpoint`` are part of the log MESSAGE
+    text (not only the ``extra`` dict, which standard ``%(message)s``
+    formatters drop) — the 2026-07-10 incident produced thousands of these
+    warnings whose message carried zero diagnostic value because the
+    offending type (the server heartbeat ``ping``, now handled by the
+    transport layer) was invisible in the log files. The stable
+    ``juniper_cascor_client_unrecognized_ws_frame`` prefix is preserved for
+    log-grep continuity.
+
     Args:
         type_label: The cardinality-bounded type string from the
             ``UnknownEnvelope`` returned by
@@ -92,7 +101,9 @@ def record_unrecognized_frame(type_label: str, endpoint: str) -> None:
             the frame arrived on.
     """
     logger.warning(
-        "juniper_cascor_client_unrecognized_ws_frame",
+        "juniper_cascor_client_unrecognized_ws_frame type=%s endpoint=%s",
+        type_label,
+        endpoint,
         extra={"type": type_label, "endpoint": endpoint},
     )
     counter = _ensure_counter()
