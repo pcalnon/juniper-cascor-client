@@ -193,11 +193,19 @@ class _WsLivenessMixin:
         return (time.monotonic() - self._last_frame_monotonic) <= window_sec
 
 
-class CascorTrainingStream:
+class CascorTrainingStream(_WsLivenessMixin):
     """Async WebSocket client for real-time training updates.
 
     Connects to the CasCor service's /ws/training endpoint and yields
     messages as they arrive. Supports both async iteration and callback APIs.
+
+    CL1: server heartbeat pings (``{"type": "ping"}``) are answered
+    automatically with ``{"type": "pong"}`` and consumed by the transport
+    layer (not yielded, not dispatched, never logged as unrecognized).
+    Pass ``auto_pong=False`` to restore the legacy behaviour where ping
+    frames are yielded to the consumer, which must then reply itself
+    (juniper-canopy's pre-CL1 relay did this) or be closed by the server
+    ~40s after connect (30s ping interval + 10s pong window).
 
     Example (async iteration):
         >>> async with CascorTrainingStream("ws://localhost:8200") as stream:
@@ -216,6 +224,7 @@ class CascorTrainingStream:
         base_url: str = DEFAULT_WS_BASE_URL,
         api_key: Optional[str] = None,
         origin: Optional[str] = None,
+        auto_pong: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR)
@@ -228,6 +237,8 @@ class CascorTrainingStream:
         self.origin = origin or os.environ.get(WS_ORIGIN_ENV_VAR)
         self._ws: Optional[ClientConnection] = None
         self._callbacks: Dict[str, List[Callable[[Dict[str, Any]], None]]] = {}
+        # CL1: liveness bookkeeping + heartbeat auto-pong posture.
+        self._init_liveness(auto_pong)
         # ERR-14: opt-in disconnect callbacks. The stream silently ended on
         # ``websockets.exceptions.ConnectionClosed`` historically; callers
         # had no signal to distinguish a clean end from an unexpected drop.
