@@ -4,8 +4,8 @@
 **Repository**: pcalnon/juniper-cascor-client
 **Author**: Paul Calnon
 **License**: MIT License
-**Version**: 0.6.0
-**Last Updated**: 2026-07-11
+**Version**: 0.7.0
+**Last Updated**: 2026-07-12
 
 ---
 
@@ -151,16 +151,26 @@ CascorTrainingStream         Async WebSocket streaming client (async context man
   ├── stream() -> AsyncIterator
   ├── listen() (callback dispatch)
   ├── send_command()
-  └── Callbacks: on_metrics(), on_state(), on_topology(), on_cascade_add(), on_event()
+  ├── Callbacks: on_metrics(), on_state(), on_topology(), on_cascade_add(), on_event()
+  └── CL1 heartbeat + liveness: server ``{"type":"ping"}`` frames are answered
+          with ``{"type":"pong"}`` and consumed (``auto_pong=True`` default;
+          ``auto_pong=False`` yields pings to the consumer); liveness surface
+          ``is_connected`` / ``is_alive(window_sec)`` / ``last_frame_at`` /
+          ``pongs_sent`` (mirrored by FakeCascorTrainingStream).
 
 CascorControlStream          Async WebSocket command/response client (async context manager)
   ├── connect(), disconnect()
+  │       CL1: connect() starts the background recv loop eagerly so server
+  │       heartbeat pings are answered from t0 (pre-0.7.0, an idle control
+  │       connection was closed by cascor 40s after connect).
   ├── command(command, params=None) -> Dict
-  │       Send a control command (start/stop/pause/resume/reset). Auto-routes
-  │       through the per-request correlation system if set_params() has
-  │       already started the background recv task; otherwise uses a direct
-  │       single-recv call. Both paths emit the canonical envelope
+  │       Send a control command (start/stop/pause/resume/reset). Routes
+  │       through the per-request correlation system whenever the background
+  │       recv task is running (the normal case after connect()); the
+  │       direct single-recv path remains as a fallback and skips/answers
+  │       heartbeat pings. Both paths emit the canonical envelope
   │       ``{"type": "command", "command": ..., ...}`` (XREPO-07/08, CC-06).
+  ├── Liveness surface: is_connected / is_alive(window_sec) / last_frame_at / pongs_sent (CL1)
   └── set_params(params, *, timeout=1.0, command_id=None) -> Dict
           Apply a runtime parameter update (e.g. ``{"learning_rate": 0.01}``)
           via /ws/control with per-request correlation by ``command_id``.
