@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.7.0
-**Last Updated**: 2026-07-12
+**Last Updated**: 2026-08-08
 
 ---
 
@@ -420,6 +420,23 @@ All tools use the **Juniper ecosystem standard line length of 512**.
 
 1. Build and publish to TestPyPI, verify installation
 2. Build and publish to production PyPI (trusted publishing / OIDC)
+
+#### `sequence-safety.yml` — Per-PR Sequence-Safety Net (Advisory)
+
+**Trigger**: pull requests (main, develop)
+
+Advisory, standalone — never a required check and never wired into the CI Quality Gate. Runs the shared `juniper-ci-tools` (`>=0.8.0,<0.9.0`) sequence-safety screens over the PR's `base..HEAD` so silent compositional losses are visible at review:
+
+- **symbol-loss screen** (`juniper-symbol-loss-check`, scoped `juniper_cascor_client/**/*.py` + `tests/**/*.py`) — FAILs on a silently deleted / gutted / duplicated `def` / `class` / method.
+- **docs deletion-magnitude screen** (`juniper-docs-additions-check`, universal docs scope) — FAILs on a deleted heading or a run of consecutive deleted lines.
+
+Both JSON reports upload as the `sequence-safety-report` artifact. An owner label hatch (`allow-symbol-loss` / `docs-rewrite`) demotes a screen to WARN-only; the `Allow-Symbol-Loss:` / `Allow-Docs-Rewrite:` commit trailers are the primary enumerated waivers.
+
+#### `main-verify.yml` — Post-Merge Verification Net
+
+**Trigger**: push (main), workflow_dispatch
+
+Bypass-proof post-merge net: re-runs the two sequence-safety screens (same package + scope) against a catch-up base (the last successful `main-verify` tip, so a `[skip ci]` window is swept on the next run) after every merge to `main`. Per-SHA concurrency (`cancel-in-progress: false`) verifies every merge even during a storm; on failure it upserts a single stable-title tracking issue per red streak. Screens-only (no regression battery in this wave).
 
 ### Security Scanning
 
