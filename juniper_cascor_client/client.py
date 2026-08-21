@@ -59,6 +59,47 @@ from juniper_cascor_client.constants import (
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorTimeoutError, JuniperCascorValidationError
 
 
+def _render_error_detail(detail: Any) -> str:
+    """Render a server error payload as readable text for an exception message.
+
+    FastAPI answers a validation failure with a *list* of error objects, e.g.::
+
+        [{"type": "missing", "loc": ["body", "input_size"], "msg": "Field required"}]
+
+    Passing that list straight to an exception makes ``str(exc)`` a Python repr
+    -- valid text, but nothing a caller can parse and nothing a human reads at a
+    glance. This renders the same content as ``body.input_size: Field required``
+    while the untouched structure stays available on ``exc.detail``.
+
+    Anything that is not a list of mappings is returned via ``str`` unchanged,
+    so this service's other envelope (``{"error": {"message": ...}}``, already
+    reduced to a plain string by the caller) and any unexpected shape both
+    survive intact.
+
+    Ported from ``juniper-data-client`` (juniper-data-client#158); see the note
+    in :class:`~juniper_cascor_client.exceptions.JuniperCascorClientError` on
+    why three separately released clients keep this aligned by convention.
+    """
+    if not isinstance(detail, list):
+        return str(detail)
+
+    rendered: list[str] = []
+    for item in detail:
+        if not isinstance(item, dict):
+            rendered.append(str(item))
+            continue
+        msg = item.get("msg", "")
+        loc = item.get("loc")
+        if isinstance(loc, (list, tuple)) and loc:
+            location = ".".join(str(part) for part in loc)
+            rendered.append(f"{location}: {msg}" if msg else location)
+        else:
+            rendered.append(str(msg) if msg else str(item))
+    # An empty list is a degenerate but legal payload; ``str`` keeps it visible
+    # rather than collapsing it to an empty message.
+    return "; ".join(rendered) if rendered else str(detail)
+
+
 class JuniperCascorClient:
     """Client for interacting with the JuniperCascor REST API.
 
@@ -402,13 +443,31 @@ class JuniperCascorClient:
             error_msg = response.text
 
         status = response.status_code
+
+        # APD-CCLIENT-004 (which absorbed the retired APD-CCLIENT-003): ``status``
+        # was computed here and then dropped on four of the five branches, so a
+        # 400 and a 422 both produced ``JuniperCascorValidationError(error_msg)``
+        # and were byte-identical. Those are one defect, not two: the branches
+        # are indistinguishable *because* the type carried no status. Every
+        # branch now passes the context, and ``error_msg`` is attached as
+        # ``detail`` UNMODIFIED -- FastAPI answers a 422 with a list of error
+        # objects, and stringifying it would leave the caller a Python repr to
+        # re-parse. ``_render_error_detail`` handles the human-readable half.
+        rendered = _render_error_detail(error_msg)
+
         if status in (HTTP_400_BAD_REQUEST, HTTP_422_UNPROCESSABLE_ENTITY):
-            raise JuniperCascorValidationError(error_msg)
+            raise JuniperCascorValidationError(rendered, status_code=status, detail=error_msg, response=response)
         elif status == HTTP_404_NOT_FOUND:
-            raise JuniperCascorNotFoundError(error_msg)
+            raise JuniperCascorNotFoundError(rendered, status_code=status, detail=error_msg, response=response)
         elif status == HTTP_409_CONFLICT:
-            raise JuniperCascorConflictError(error_msg)
+            raise JuniperCascorConflictError(rendered, status_code=status, detail=error_msg, response=response)
         elif status == HTTP_503_SERVICE_UNAVAILABLE:
-            raise JuniperCascorServiceUnavailableError(error_msg)
+            # Reachability caveat: 503 is in RETRYABLE_STATUS_CODES, so urllib3's
+            # Retry exhausts and surfaces a RequestException that is converted
+            # before ``_handle_response`` runs. This branch is dead today --
+            # that is APD-CCLIENT-002, tracked separately and deliberately not
+            # resolved here. It is wired for context anyway so the branch is not
+            # left as the one inconsistent arm if -002 ever makes it reachable.
+            raise JuniperCascorServiceUnavailableError(rendered, status_code=status, detail=error_msg, response=response)
         else:
-            raise JuniperCascorClientError(f"HTTP {status}: {error_msg}")
+            raise JuniperCascorClientError(f"HTTP {status}: {rendered}", status_code=status, detail=error_msg, response=response)

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Exceptions now carry `status_code`, `detail` and `response`** (defect-register `APD-CCLIENT-004`, which absorbed the retired `APD-CCLIENT-003`). `_handle_response` computed the status and then dropped it on four of its five branches, so a 400 and a 422 both raised `JuniperCascorValidationError(error_msg)` and were **byte-identical** — the only way to tell them apart was substring-matching the message. Those were one defect, not two: the branches were indistinguishable *because* the type carried no status. The base `JuniperCascorClientError.__init__` now accepts keyword-only `status_code` / `detail` / `response`, and every branch passes them. **Backward compatible**: the new parameters are keyword-only, so the 29 single-positional-message raises in `FakeCascorClient` and every consumer call site are unchanged, and locally raised errors (connection, timeout, retry-exhausted) simply report `status_code=None`.
+- **A FastAPI 422 `detail` list is no longer surfaced as a Python repr.** `body.get("detail", ...)` returns a *list* of error objects for a 422, and that list was passed straight to the exception, so `str(exc)` was an unparseable repr. The structure is now attached to `exc.detail` **unmodified** while the message renders it as `body.input_size: Field required` via a new `_render_error_detail` helper. This is the same defect juniper-data-client tracks as `APD-DCLIENT-003`; it had never been recorded against this client.
+- **`FakeCascorClient` mirrors the real status codes.** It claims full API parity, so a double raising the right type with `status_code=None` would let a consumer's test pass against behaviour production does not have. 404 for not-found, 409 for conflict, and 422 for the two validation sites (the real service validates those inputs with pydantic `Field(ge=1)` and `Query(ge=, le=)`, which FastAPI answers 422 rather than 400). Its one local-state error ("Client is closed") deliberately carries no status.
+- **Exception context survives `pickle` and `copy`.** `BaseException.__reduce__` rebuilds from `args`, which holds only the message, so a round-trip would have returned an exception that looked correct and had silently dropped the new fields — the failure mode flake8-bugbear's `B042` warns about. A `__reduce__` override restores the full state.
+
+This is a port of the convention established in [juniper-data-client#158](https://github.com/pcalnon/juniper-data-client/pull/158). The three Juniper clients are separately released packages with no shared code, so nothing mechanical keeps them aligned; the alignment is a convention carried by each package's tests and AGENTS.md.
+
 ## [0.7.0] - 2026-07-11
 
 ### Added
