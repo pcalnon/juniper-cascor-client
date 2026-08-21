@@ -132,6 +132,28 @@ class JuniperCascorClient:
             backoff_factor=DEFAULT_BACKOFF_FACTOR,
             status_forcelist=RETRYABLE_STATUS_CODES,
             allowed_methods=RETRY_ALLOWED_METHODS,
+            # APD-CCLIENT-002: hand the exhausted response BACK instead of
+            # raising. urllib3 defaults ``raise_on_status`` to True, so once the
+            # retries for a ``status_forcelist`` code run out it raises
+            # ``MaxRetryError`` -- which requests surfaces as ``RetryError``,
+            # a plain ``RequestException``. That was caught by the generic
+            # handler in ``_request`` and flattened into
+            # ``JuniperCascorClientError`` BEFORE ``_handle_response`` ever ran,
+            # which made the 503 arm there (and therefore
+            # ``JuniperCascorServiceUnavailableError``) unreachable in any
+            # client built with retries -- i.e. every production client.
+            #
+            # With this False the retries still happen exactly as before; only
+            # the give-up path changes, returning the final response so
+            # ``_handle_response`` can classify it. A 503 that outlives its
+            # retries now raises ``JuniperCascorServiceUnavailableError`` with
+            # ``status_code=503``, and 429 / 502 / 504 keep their real status
+            # instead of ``None``.
+            #
+            # Genuine transport failures (connection refused, DNS, timeout) are
+            # untouched: they never produce a response, so they still raise from
+            # urllib3 and are still caught as ConnectionError / Timeout.
+            raise_on_status=False,
         )
         adapter = HTTPAdapter(max_retries=retry_strategy, pool_maxsize=DEFAULT_POOL_MAXSIZE)
         self.session.mount("http://", adapter)
