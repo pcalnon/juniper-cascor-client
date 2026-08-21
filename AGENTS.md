@@ -215,7 +215,7 @@ Every exception carries four attributes, set by the base `__init__`:
 | Attribute | Meaning |
 |-----------|---------|
 | `message` | The human-readable summary; also what `str(exc)` returns. |
-| `status_code` | HTTP status of the originating response, or `None` when raised without one (connection, timeout, "client is closed", retry-exhausted). |
+| `status_code` | HTTP status of the originating response, or `None` when raised without one (connection, timeout, "client is closed"). A **retry-exhausted** response now carries its real status too — see the retry note below; it used to be `None`. |
 | `detail` | The server's error payload **exactly as decoded**. This service answers with two envelopes (`{"error": {"message": ...}}` and FastAPI's `{"detail": ...}`), and the latter is a `list[dict]` for a 422. Never stringified. |
 | `response` | The originating `requests.Response`, when there was one. |
 
@@ -266,7 +266,20 @@ package's tests.
 - **Context Manager**: REST client (sync `with`), WebSocket clients (async `async with`)
 - **Callback/Observer**: WebSocket training stream dispatches to registered callbacks by message type
 - **Async Iteration**: `async for message in stream.stream():`
-- **Retry with Backoff**: HTTP adapter retries 502/504 with 0.5s exponential backoff (3 retries)
+- **Retry with Backoff**: HTTP adapter retries `RETRYABLE_STATUS_CODES` (429 / 502 / 503 / 504) with
+  0.5s exponential backoff (3 retries by default). **`raise_on_status=False` is load-bearing — do not
+  drop it.** urllib3 defaults it to `True`, which makes an exhausted retry raise `MaxRetryError`;
+  requests surfaces that as `RetryError`, a plain `RequestException`, which `_request`'s generic
+  handler flattens into `JuniperCascorClientError` *before* `_handle_response` can classify it. That
+  is what made the 503 arm — and therefore `JuniperCascorServiceUnavailableError` — unreachable in
+  every client built with retries (defect-register `APD-CCLIENT-002`). With it `False` the retries
+  are unchanged; only the give-up path differs, returning the final response so a 503 that outlives
+  its retries raises the typed error with `status_code=503`, and 429/502/504 keep their real status.
+  Transport failures (refused connection, DNS, timeout) never produce a response and are unaffected.
+  Pinned by `tests/test_client.py::TestRetryExhaustionSurfacesTypedStatus`, which deliberately uses a
+  **retrying** client — every older 503 test mounts `HTTPAdapter(max_retries=0)` first, which is why
+  the dead branch went unnoticed: the coverage proved the branch worked under a configuration
+  production never uses.
 - **Connection Pooling**: 10 max connections per host via `HTTPAdapter`
 - **Response Envelope**: All responses wrapped as `{"status": "success", "data": {...}, "meta": {...}}`
 - **State Machine**: FakeCascorClient implements training state transitions (idle -> training -> paused -> complete)

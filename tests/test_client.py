@@ -350,3 +350,75 @@ class TestMalformedJsonResponse:
             client.session.mount("https://", no_retry)
             with pytest.raises(JuniperCascorClientError, match="upstream proxy error not json"):
                 client.get_network()
+
+
+@pytest.mark.unit
+class TestRetryExhaustionSurfacesTypedStatus:
+    """A retryable status that outlives its retries must still be classified.
+
+    Regression coverage for defect-register ``APD-CCLIENT-002``. urllib3
+    defaults ``raise_on_status`` to True, so once the retries for a
+    ``status_forcelist`` code ran out it raised ``MaxRetryError`` -- surfaced by
+    requests as ``RetryError``, a plain ``RequestException`` -- which
+    ``_request``'s generic handler flattened into ``JuniperCascorClientError``
+    *before* ``_handle_response`` ever ran. The 503 arm there, and therefore
+    ``JuniperCascorServiceUnavailableError``, was unreachable in any client
+    built with retries: i.e. every production client.
+
+    Every pre-existing test of that arm swaps in ``HTTPAdapter(max_retries=0)``
+    first (see ``TestErrorHandling.test_service_unavailable_503``). That is why
+    the dead branch went unnoticed -- the coverage proved the branch worked
+    under a configuration production never uses. These tests deliberately use a
+    **retrying** client and mount no adapter of their own.
+    """
+
+    @responses.activate
+    def test_503_after_retries_raises_the_typed_error_not_the_generic_one(self) -> None:
+        responses.add(responses.GET, f"{API_URL}/network", json={"detail": "not ready"}, status=503)
+
+        with JuniperCascorClient(BASE_URL, retries=2) as client:
+            with pytest.raises(JuniperCascorServiceUnavailableError) as excinfo:
+                client.get_network()
+
+        assert excinfo.value.status_code == 503
+        assert excinfo.value.detail == "not ready"
+
+    @responses.activate
+    def test_retries_are_still_performed(self) -> None:
+        """The fix changes only the give-up path, never the retrying itself.
+
+        If ``raise_on_status=False`` were mistaken for "stop retrying", this is
+        the arm that catches it: a retrying client must still make
+        ``retries + 1`` attempts before surfacing the error.
+        """
+        responses.add(responses.GET, f"{API_URL}/network", json={"detail": "not ready"}, status=503)
+
+        with JuniperCascorClient(BASE_URL, retries=2) as client:
+            with pytest.raises(JuniperCascorServiceUnavailableError):
+                client.get_network()
+
+        assert len(responses.calls) == 3
+
+    @responses.activate
+    def test_other_retryable_statuses_keep_their_real_status_code(self) -> None:
+        """429 / 502 / 504 have no dedicated type, but they had no status either."""
+        responses.add(responses.GET, f"{API_URL}/network", json={"detail": "slow down"}, status=429)
+
+        with JuniperCascorClient(BASE_URL, retries=1) as client:
+            with pytest.raises(JuniperCascorClientError) as excinfo:
+                client.get_network()
+
+        assert excinfo.value.status_code == 429
+
+    def test_transport_failures_are_untouched(self) -> None:
+        """No response means no classification -- these must still be typed as transport errors.
+
+        ``raise_on_status`` only governs the give-up path for a *status*. A
+        refused connection never produces a response, so it must keep raising
+        from urllib3 and keep landing on the ConnectionError arm.
+        """
+        with JuniperCascorClient("http://127.0.0.1:19999", retries=1) as client:
+            with pytest.raises(JuniperCascorConnectionError) as excinfo:
+                client.get_network()
+
+        assert excinfo.value.status_code is None
