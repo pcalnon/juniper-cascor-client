@@ -208,6 +208,50 @@ JuniperCascorClientError (base)
   └── JuniperCascorServiceUnavailableError  HTTP 503
 ```
 
+#### Exception context (do not remove)
+
+Every exception carries four attributes, set by the base `__init__`:
+
+| Attribute | Meaning |
+|-----------|---------|
+| `message` | The human-readable summary; also what `str(exc)` returns. |
+| `status_code` | HTTP status of the originating response, or `None` when raised without one (connection, timeout, "client is closed", retry-exhausted). |
+| `detail` | The server's error payload **exactly as decoded**. This service answers with two envelopes (`{"error": {"message": ...}}` and FastAPI's `{"detail": ...}`), and the latter is a `list[dict]` for a 422. Never stringified. |
+| `response` | The originating `requests.Response`, when there was one. |
+
+`status_code` is the **only** thing separating a 400 from a 422 — both raise
+`JuniperCascorValidationError`. `_handle_response` used to compute the status
+and then drop it on four of its five branches, which made those two responses
+byte-identical (defect-register `APD-CCLIENT-004`, absorbing the retired
+`APD-CCLIENT-003`).
+
+Constraints a refactor must not break:
+
+- **The extra parameters are keyword-only**, so the 29 single-positional-message
+  raises in `FakeCascorClient` — and every consumer call site — keep working.
+- **`detail` keeps the server's structure.** The message renders a 422 list as
+  `body.input_size: Field required` via `client._render_error_detail`; the list
+  itself stays on the attribute.
+- **`__reduce__` must stay.** `BaseException.__reduce__` rebuilds from `args`,
+  which holds only the message, so without it a pickle/copy round-trip returns an
+  exception that looks right and has silently lost the context. That is what
+  flake8-bugbear's `B042` warns about; the `noqa` on `__init__` is paired with
+  `__reduce__`, not a dismissal.
+
+`FakeCascorClient` populates `status_code` on every HTTP-shaped error it raises
+(404 not-found, 409 conflict, 422 validation — the real service validates those
+inputs with pydantic `Field(ge=1)` / `Query(ge=, le=)`, which FastAPI answers
+422). Its one local-state error ("Client is closed") deliberately has none. The
+fake claims full API parity, so a double raising the right type with
+`status_code=None` would let a consumer's test pass against behaviour production
+does not have.
+
+**This mirrors `juniper-data-client` deliberately** (juniper-data-client#158 is
+the reference implementation; `juniper-recurrence-client` is the third). The
+three are separately released packages with no shared code, so no drift check can
+enforce it — the alignment is a convention, kept by these notes and by each
+package's tests.
+
 ### Testing Utilities (`juniper_cascor_client.testing`)
 
 | Class | Purpose |

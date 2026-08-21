@@ -258,7 +258,7 @@ class FakeCascorClient:
             if path == "/admin/experimental_functions" and verb == "POST":
                 self._experimental_functions_enabled = bool((json or {}).get("enabled", False))
                 return self._success_envelope({"experimental_functions_enabled": self._experimental_functions_enabled})
-        raise JuniperCascorNotFoundError(f"FakeCascorClient has no in-memory route for {verb} {path}")
+        raise JuniperCascorNotFoundError(f"FakeCascorClient has no in-memory route for {verb} {path}", status_code=404)
 
     # ─── Health ──────────────────────────────────────────────────────────
 
@@ -330,13 +330,13 @@ class FakeCascorClient:
             self._maybe_raise_error("create_network")
 
             if self._network_loaded:
-                raise JuniperCascorConflictError("Network already exists. Delete it first.")
+                raise JuniperCascorConflictError("Network already exists. Delete it first.", status_code=409)
 
             # Validate required fields
             required = ["input_size", "output_size", "learning_rate"]
             missing = [f for f in required if f not in kwargs]
             if missing and self._scenario != SCENARIO_EMPTY:
-                raise JuniperCascorValidationError(f"Missing required fields: {', '.join(missing)}")
+                raise JuniperCascorValidationError(f"Missing required fields: {', '.join(missing)}", status_code=422)
 
             input_size = kwargs.get("input_size", DEFAULT_INPUT_SIZE)
             output_size = kwargs.get("output_size", DEFAULT_OUTPUT_SIZE)
@@ -372,7 +372,7 @@ class FakeCascorClient:
             self._maybe_raise_error("get_network")
 
             if not self._network_loaded:
-                raise JuniperCascorNotFoundError("No network loaded.")
+                raise JuniperCascorNotFoundError("No network loaded.", status_code=404)
 
             return self._success_envelope(
                 {
@@ -390,10 +390,10 @@ class FakeCascorClient:
             self._maybe_raise_error("delete_network")
 
             if not self._network_loaded:
-                raise JuniperCascorNotFoundError("No network loaded.")
+                raise JuniperCascorNotFoundError("No network loaded.", status_code=404)
 
             if self._state == STATE_TRAINING:
-                raise JuniperCascorConflictError("Cannot delete network while training is active. Stop training first.")
+                raise JuniperCascorConflictError("Cannot delete network while training is active. Stop training first.", status_code=409)
 
             self._network_config = None
             self._topology = None
@@ -414,7 +414,7 @@ class FakeCascorClient:
             self._maybe_raise_error("get_topology")
 
             if not self._network_loaded or self._topology is None:
-                raise JuniperCascorNotFoundError("No network loaded.")
+                raise JuniperCascorNotFoundError("No network loaded.", status_code=404)
 
             return self._success_envelope(copy.deepcopy(self._topology))
 
@@ -425,7 +425,7 @@ class FakeCascorClient:
             self._maybe_raise_error("get_statistics")
 
             if not self._network_loaded:
-                raise JuniperCascorNotFoundError("No network loaded.")
+                raise JuniperCascorNotFoundError("No network loaded.", status_code=404)
 
             hidden_units = self._topology.get("hidden_units", 0) if self._topology else 0
             stats = generate_weight_statistics(hidden_units)
@@ -458,13 +458,13 @@ class FakeCascorClient:
             self._maybe_raise_error("start_training")
 
             if not self._network_loaded:
-                raise JuniperCascorNotFoundError("No network loaded. Create a network first.")
+                raise JuniperCascorNotFoundError("No network loaded. Create a network first.", status_code=404)
 
             if self._state == STATE_TRAINING:
-                raise JuniperCascorConflictError("Training is already in progress.")
+                raise JuniperCascorConflictError("Training is already in progress.", status_code=409)
 
             if self._state == STATE_PAUSED:
-                raise JuniperCascorConflictError("Training is paused. Resume or reset before starting new training.")
+                raise JuniperCascorConflictError("Training is paused. Resume or reset before starting new training.", status_code=409)
 
             # Store training params
             self._training_params = {
@@ -508,7 +508,7 @@ class FakeCascorClient:
             self._maybe_raise_error("stop_training")
 
             if self._state not in (STATE_TRAINING, STATE_PAUSED):
-                raise JuniperCascorConflictError(f"Cannot stop training in state '{self._state}'.")
+                raise JuniperCascorConflictError(f"Cannot stop training in state '{self._state}'.", status_code=409)
 
             self._state = STATE_IDLE
 
@@ -527,7 +527,7 @@ class FakeCascorClient:
             self._maybe_raise_error("pause_training")
 
             if self._state != STATE_TRAINING:
-                raise JuniperCascorConflictError(f"Cannot pause training in state '{self._state}'.")
+                raise JuniperCascorConflictError(f"Cannot pause training in state '{self._state}'.", status_code=409)
 
             self._state = STATE_PAUSED
 
@@ -546,7 +546,7 @@ class FakeCascorClient:
             self._maybe_raise_error("resume_training")
 
             if self._state != STATE_PAUSED:
-                raise JuniperCascorConflictError(f"Cannot resume training in state '{self._state}'.")
+                raise JuniperCascorConflictError(f"Cannot resume training in state '{self._state}'.", status_code=409)
 
             self._state = STATE_TRAINING
 
@@ -565,7 +565,7 @@ class FakeCascorClient:
             self._maybe_raise_error("reset_training")
 
             if not self._network_loaded:
-                raise JuniperCascorNotFoundError("No network loaded.")
+                raise JuniperCascorNotFoundError("No network loaded.", status_code=404)
 
             # Reset to initial topology (no hidden units)
             if self._network_config:
@@ -698,7 +698,7 @@ class FakeCascorClient:
             self._maybe_raise_error("update_params")
 
             if not self._network_loaded:
-                raise JuniperCascorNotFoundError("No network loaded.")
+                raise JuniperCascorNotFoundError("No network loaded.", status_code=404)
 
             # Update the network config with the provided params
             updatable_keys = {
@@ -795,7 +795,7 @@ class FakeCascorClient:
             self._maybe_raise_error("get_dataset_data")
 
             if self._dataset is None:
-                raise JuniperCascorNotFoundError("No dataset loaded.")
+                raise JuniperCascorNotFoundError("No dataset loaded.", status_code=404)
 
             samples = self._dataset.get("train_samples", DEFAULT_DATASET_TRAIN_SAMPLES)
             features = self._dataset.get("features", DEFAULT_DATASET_FEATURES)
@@ -819,10 +819,10 @@ class FakeCascorClient:
             self._maybe_raise_error("get_decision_boundary")
 
             if not self._network_loaded:
-                raise JuniperCascorNotFoundError("No network loaded.")
+                raise JuniperCascorNotFoundError("No network loaded.", status_code=404)
 
             if resolution < 5 or resolution > 200:
-                raise JuniperCascorValidationError(f"Resolution must be between 5 and 200, got {resolution}.")
+                raise JuniperCascorValidationError(f"Resolution must be between 5 and 200, got {resolution}.", status_code=422)
 
             input_size = self._network_config.get("input_size", DEFAULT_INPUT_SIZE) if self._network_config else DEFAULT_INPUT_SIZE
             hidden_units = self._topology.get("hidden_units", 0) if self._topology else 0
@@ -843,7 +843,7 @@ class FakeCascorClient:
             self._maybe_raise_error("list_snapshots")
 
             if not self._network_loaded:
-                raise JuniperCascorNotFoundError("No network loaded.")
+                raise JuniperCascorNotFoundError("No network loaded.", status_code=404)
 
             snapshots: List[Dict[str, Any]] = []
             if self._state in (STATE_TRAINING, STATE_PAUSED, STATE_COMPLETE):
@@ -880,11 +880,11 @@ class FakeCascorClient:
             self._maybe_raise_error("get_snapshot")
 
             if not self._network_loaded:
-                raise JuniperCascorNotFoundError("No network loaded.")
+                raise JuniperCascorNotFoundError("No network loaded.", status_code=404)
 
             # Only recognize the two fake snapshot IDs
             if snapshot_id not in (FAKE_SNAPSHOT_1_ID, FAKE_SNAPSHOT_2_ID):
-                raise JuniperCascorNotFoundError(f"Snapshot '{snapshot_id}' not found.")
+                raise JuniperCascorNotFoundError(f"Snapshot '{snapshot_id}' not found.", status_code=404)
 
             epoch = max(0, self._epoch - FAKE_SNAPSHOT_1_EPOCH_OFFSET) if snapshot_id == FAKE_SNAPSHOT_1_ID else self._epoch
             hidden = FAKE_SNAPSHOT_1_HIDDEN_UNITS if snapshot_id == FAKE_SNAPSHOT_1_ID else FAKE_SNAPSHOT_2_HIDDEN_UNITS
@@ -915,7 +915,7 @@ class FakeCascorClient:
             self._maybe_raise_error("save_snapshot")
 
             if not self._network_loaded:
-                raise JuniperCascorNotFoundError("No network loaded.")
+                raise JuniperCascorNotFoundError("No network loaded.", status_code=404)
 
             snapshot_id = f"{SNAPSHOT_ID_GENERATED_PREFIX}{int(time.time())}"
             hidden_units = self._topology.get("hidden_units", 0) if self._topology else 0
@@ -946,13 +946,13 @@ class FakeCascorClient:
             self._maybe_raise_error("load_snapshot")
 
             if not self._network_loaded:
-                raise JuniperCascorNotFoundError("No network loaded.")
+                raise JuniperCascorNotFoundError("No network loaded.", status_code=404)
 
             if self._state == STATE_TRAINING:
-                raise JuniperCascorConflictError("Cannot load snapshot while training is active. Stop training first.")
+                raise JuniperCascorConflictError("Cannot load snapshot while training is active. Stop training first.", status_code=409)
 
             if snapshot_id not in (FAKE_SNAPSHOT_1_ID, FAKE_SNAPSHOT_2_ID):
-                raise JuniperCascorNotFoundError(f"Snapshot '{snapshot_id}' not found.")
+                raise JuniperCascorNotFoundError(f"Snapshot '{snapshot_id}' not found.", status_code=404)
 
             return self._success_envelope(
                 {
@@ -1011,7 +1011,7 @@ class FakeCascorClient:
 
             known = {FAKE_WORKER_1_ID, FAKE_WORKER_2_ID}
             if worker_id not in known:
-                raise JuniperCascorNotFoundError(f"Worker '{worker_id}' not found")
+                raise JuniperCascorNotFoundError(f"Worker '{worker_id}' not found", status_code=404)
 
             is_first = worker_id == FAKE_WORKER_1_ID
             return self._success_envelope(
@@ -1081,7 +1081,7 @@ class FakeCascorClient:
         """
         with self._lock:
             if self._state not in (STATE_TRAINING, STATE_PAUSED):
-                raise JuniperCascorConflictError(f"Cannot advance epoch in state '{self._state}'. Must be 'training' or 'paused'.")
+                raise JuniperCascorConflictError(f"Cannot advance epoch in state '{self._state}'. Must be 'training' or 'paused'.", status_code=409)
 
             max_epochs = DEFAULT_MAX_EPOCHS
             if self._training_params:

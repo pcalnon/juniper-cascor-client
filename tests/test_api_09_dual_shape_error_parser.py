@@ -269,3 +269,172 @@ class TestNonJsonAndMalformedFallback:
         # The raw text fallback contains the JSON-encoded body so at
         # least one of the literal keys appears in the error message.
         assert "unexpected" in str(excinfo.value) or "shape" in str(excinfo.value)
+
+
+class TestExceptionContext:
+    """Every branch of ``_handle_response`` must attach the response context.
+
+    Regression coverage for defect-register ``APD-CCLIENT-004``, which absorbed
+    the retired ``APD-CCLIENT-003``. ``_handle_response`` computed ``status``
+    and then dropped it on four of its five branches, so a 400 and a 422 both
+    raised ``JuniperCascorValidationError(error_msg)`` and were byte-identical.
+    Those are one defect: the branches were indistinguishable *because* the
+    exception type carried no status.
+
+    Ported from ``juniper-data-client`` (juniper-data-client#158). The three
+    clients are separately released packages with no shared code, so nothing
+    mechanical keeps them aligned -- these tests are the alignment.
+    """
+
+    #: A real FastAPI 422 body: ``detail`` is a list of error objects.
+    FASTAPI_422_DETAIL = [
+        {"type": "missing", "loc": ["body", "input_size"], "msg": "Field required"},
+        {"type": "int_parsing", "loc": ["body", "output_size"], "msg": "Input should be a valid integer"},
+    ]
+
+    @pytest.mark.parametrize("status,exc_class", STATUS_TO_EXCEPTION)
+    @responses.activate
+    def test_every_branch_carries_its_status(self, client, status, exc_class):
+        """All five branches, not just the generic one that formatted it in."""
+        responses.add(responses.GET, f"{API_URL}/network", json={"detail": "nope"}, status=status)
+
+        with pytest.raises(exc_class) as excinfo:
+            client.get_network()
+
+        assert excinfo.value.status_code == status
+        assert excinfo.value.detail == "nope"
+        assert excinfo.value.response is not None
+
+    @responses.activate
+    def test_400_and_422_are_no_longer_byte_identical(self, client):
+        """The retired APD-CCLIENT-003 half: same type, same text, no way to tell."""
+        responses.add(responses.GET, f"{API_URL}/network", json={"detail": "bad"}, status=400)
+        responses.add(responses.GET, f"{API_URL}/network", json={"detail": "bad"}, status=422)
+
+        with pytest.raises(JuniperCascorValidationError) as first:
+            client.get_network()
+        with pytest.raises(JuniperCascorValidationError) as second:
+            client.get_network()
+
+        assert {first.value.status_code, second.value.status_code} == {400, 422}
+
+    @responses.activate
+    def test_422_detail_list_is_preserved_as_structure(self, client):
+        """A FastAPI 422 ``detail`` is a list; the caller must get the list."""
+        responses.add(responses.GET, f"{API_URL}/network", json={"detail": self.FASTAPI_422_DETAIL}, status=422)
+
+        with pytest.raises(JuniperCascorValidationError) as excinfo:
+            client.get_network()
+
+        assert excinfo.value.detail == self.FASTAPI_422_DETAIL
+        assert excinfo.value.detail[0]["loc"] == ["body", "input_size"]
+
+    @responses.activate
+    def test_422_message_is_readable_not_a_python_repr(self, client):
+        """Previously the list was passed straight to the exception, so
+        ``str(exc)`` was a Python repr. This is the same defect juniper-data-client
+        tracks as APD-DCLIENT-003; it was never recorded against this client.
+        """
+        responses.add(responses.GET, f"{API_URL}/network", json={"detail": self.FASTAPI_422_DETAIL}, status=422)
+
+        with pytest.raises(JuniperCascorValidationError) as excinfo:
+            client.get_network()
+
+        message = str(excinfo.value)
+        assert "body.input_size: Field required" in message
+        assert "body.output_size: Input should be a valid integer" in message
+        # Fingerprints of the old repr-of-a-list behaviour.
+        assert "'type':" not in message
+        assert "[{" not in message
+
+    @responses.activate
+    def test_envelope_shape_also_carries_context(self, client):
+        """The ``{"error": {"message": ...}}`` envelope is the other parser arm."""
+        body = {"status": "error", "error": {"code": "CONFLICT", "message": "already training", "detail": None}}
+        responses.add(responses.GET, f"{API_URL}/network", json=body, status=409)
+
+        with pytest.raises(JuniperCascorConflictError) as excinfo:
+            client.get_network()
+
+        assert excinfo.value.status_code == 409
+        assert excinfo.value.detail == "already training"
+
+    def test_locally_raised_errors_have_no_status_code(self):
+        """Backward compatibility: no response means the fields stay None."""
+        error = JuniperCascorClientError("connection refused")
+
+        assert error.status_code is None
+        assert error.detail is None
+        assert error.response is None
+        assert str(error) == "connection refused"
+
+    def test_positional_message_construction_still_works(self):
+        """The added parameters are keyword-only, so every existing call site
+        -- including ``FakeCascorClient``'s 29 raises -- keeps working."""
+        for factory in (JuniperCascorClientError, JuniperCascorNotFoundError, JuniperCascorValidationError):
+            error = factory("plain message")
+            assert str(error) == "plain message"
+            assert error.status_code is None
+
+    def test_context_survives_pickle_and_copy(self):
+        """``BaseException.__reduce__`` rebuilds from ``args``, which holds only
+        the message -- so without the override a round-trip returns an exception
+        that looks correct and has lost the context (flake8-bugbear B042).
+        """
+        import copy as copy_module
+
+        # Bandit blacklists pickle (B403/B301) for UNTRUSTED data; the payload
+        # here is produced by the ``dumps`` below, in-process, from an exception
+        # this test just built. The suppressions are the trailing inline markers
+        # only -- a comment line that *begins* with the marker word is itself
+        # parsed as a directive, and the following prose is read as test IDs.
+        import pickle  # nosec B403
+
+        original = JuniperCascorValidationError("Validation error", status_code=422, detail=[{"msg": "Field required"}])
+        round_tripped = pickle.loads(pickle.dumps(original))  # nosec B301
+
+        for rebuilt in (round_tripped, copy_module.copy(original), copy_module.deepcopy(original)):
+            assert isinstance(rebuilt, JuniperCascorValidationError)
+            assert rebuilt.status_code == 422
+            assert rebuilt.detail == [{"msg": "Field required"}]
+            assert str(rebuilt) == str(original)
+
+
+class TestFakeClientMatchesRealExceptionContext:
+    """``FakeCascorClient`` implements every public method of the real client,
+    so it must populate the same context.
+
+    A double that raises the right *type* with ``status_code=None`` lets a
+    consumer's test pass against behaviour production does not have.
+    """
+
+    def test_fake_not_found_carries_404(self):
+        from juniper_cascor_client.testing import FakeCascorClient
+
+        fake = FakeCascorClient()
+        with pytest.raises(JuniperCascorNotFoundError) as excinfo:
+            fake.get_network()
+
+        assert excinfo.value.status_code == 404
+
+    def test_fake_conflict_carries_409(self):
+        from juniper_cascor_client.testing import FakeCascorClient
+
+        fake = FakeCascorClient()
+        fake.create_network(input_size=2, output_size=2, learning_rate=0.1)
+        with pytest.raises(JuniperCascorConflictError) as excinfo:
+            fake.create_network(input_size=2, output_size=2, learning_rate=0.1)
+
+        assert excinfo.value.status_code == 409
+
+    def test_fake_validation_carries_422_like_pydantic(self):
+        """The real service validates these with pydantic (``Field(ge=1)`` /
+        ``Query(ge=, le=)``), and FastAPI answers a constraint violation 422.
+        """
+        from juniper_cascor_client.testing import FakeCascorClient
+
+        fake = FakeCascorClient()
+        with pytest.raises(JuniperCascorValidationError) as excinfo:
+            fake.create_network(input_size=2)
+
+        assert excinfo.value.status_code == 422
