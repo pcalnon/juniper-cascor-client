@@ -61,7 +61,20 @@ class TestClientInit:
         assert client.base_url == "https://example.com:9000"
         client.close()
 
-    @pytest.mark.parametrize("hostless", ["", "   ", "http://", "https://", "/v1", "http:///v1"])
+    def test_normalize_uppercase_scheme_is_not_downgraded(self):
+        """Scheme matching is case-insensitive (RFC 3986): 'HTTPS://' must stay
+        https, not be re-prefixed into http://HTTPS://... — a silent TLS
+        downgrade that would send the API key over HTTP to hostname 'https'."""
+        client = JuniperCascorClient("HTTPS://example.com:9000")
+        assert client.base_url == "https://example.com:9000"
+        client.close()
+
+    def test_normalize_mixed_case_scheme(self):
+        client = JuniperCascorClient("Http://example.com:9000")
+        assert client.base_url == "http://example.com:9000"
+        client.close()
+
+    @pytest.mark.parametrize("hostless", ["", "   ", "http://", "https://", "/v1", "http:///v1", "http://user:secret@"])
     def test_normalize_hostless_url_raises_configuration_error(self, hostless):
         """A base URL with no host must fail at construction with the typed
         error, not opaquely on the first request (APD-CCLIENT-005)."""
