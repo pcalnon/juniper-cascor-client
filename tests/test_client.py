@@ -4,7 +4,7 @@ import pytest
 import responses
 from responses import matchers
 
-from juniper_cascor_client import JuniperCascorClient, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorValidationError
+from juniper_cascor_client import JuniperCascorClient, JuniperCascorConfigurationError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorValidationError
 from juniper_cascor_client.exceptions import JuniperCascorClientError
 
 BASE_URL = "http://localhost:8200"
@@ -37,6 +37,53 @@ class TestClientInit:
         client = JuniperCascorClient("http://example.com:9000/")
         assert client.base_url == "http://example.com:9000"
         client.close()
+
+    def test_normalize_url_without_scheme(self):
+        """A schemeless host gets the http:// default (APD-CCLIENT-005)."""
+        client = JuniperCascorClient("example.com:9000")
+        assert client.base_url == "http://example.com:9000"
+        client.close()
+
+    def test_normalize_url_with_v1_suffix(self):
+        """A /v1-suffixed base no longer produces a double /v1 api_url."""
+        client = JuniperCascorClient("http://example.com:9000/v1")
+        assert client.base_url == "http://example.com:9000"
+        assert client.api_url == "http://example.com:9000/v1"
+        client.close()
+
+    def test_normalize_url_with_whitespace(self):
+        client = JuniperCascorClient("  http://example.com:9000  ")
+        assert client.base_url == "http://example.com:9000"
+        client.close()
+
+    def test_normalize_https_preserved(self):
+        client = JuniperCascorClient("https://example.com:9000")
+        assert client.base_url == "https://example.com:9000"
+        client.close()
+
+    def test_normalize_uppercase_scheme_is_not_downgraded(self):
+        """Scheme matching is case-insensitive (RFC 3986): 'HTTPS://' must stay
+        https, not be re-prefixed into http://HTTPS://... — a silent TLS
+        downgrade that would send the API key over HTTP to hostname 'https'."""
+        client = JuniperCascorClient("HTTPS://example.com:9000")
+        assert client.base_url == "https://example.com:9000"
+        client.close()
+
+    def test_normalize_mixed_case_scheme(self):
+        client = JuniperCascorClient("Http://example.com:9000")
+        assert client.base_url == "http://example.com:9000"
+        client.close()
+
+    @pytest.mark.parametrize("hostless", ["", "   ", "http://", "https://", "/v1", "http:///v1", "http://user:secret@"])
+    def test_normalize_hostless_url_raises_configuration_error(self, hostless):
+        """A base URL with no host must fail at construction with the typed
+        error, not opaquely on the first request (APD-CCLIENT-005)."""
+        with pytest.raises(JuniperCascorConfigurationError, match="must include a host"):
+            JuniperCascorClient(hostless)
+
+    def test_hostless_url_error_is_catchable_as_the_base_error(self):
+        with pytest.raises(JuniperCascorClientError):
+            JuniperCascorClient("http://")
 
     def test_api_key_set_in_headers(self):
         client = JuniperCascorClient(api_key="test-key-123")
