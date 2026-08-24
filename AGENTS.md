@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.7.0
-**Last Updated**: 2026-08-21
+**Last Updated**: 2026-08-24
 
 ---
 
@@ -62,7 +62,7 @@ Gate: 80% aggregate (override with `COVERAGE_FAIL_UNDER=<n>`). The script runs t
 |------|---------|
 | `juniper_cascor_client/client.py` | REST client class (`JuniperCascorClient`) |
 | `juniper_cascor_client/ws_client.py` | WebSocket clients (`CascorTrainingStream`, `CascorControlStream`) |
-| `juniper_cascor_client/exceptions.py` | Exception hierarchy (7 classes) |
+| `juniper_cascor_client/exceptions.py` | Exception hierarchy (8 classes on main; 9 after APD-CCLIENT-005 / #129) |
 | `juniper_cascor_client/__init__.py` | Public API exports and version |
 | `juniper_cascor_client/py.typed` | PEP 561 typed package marker |
 | `juniper_cascor_client/testing/` | Testing utilities submodule |
@@ -137,6 +137,9 @@ Includes all test dependencies plus:
 
 ```text
 JuniperCascorClient          Synchronous REST client (context manager)
+  ├── Constructor:           `_normalize_url` (APD-CCLIENT-005 / #129) — scheme default,
+  │                          host required, trailing `/` and `/v1` stripped. Until #129
+  │                          merges, construction still only `base_url.rstrip("/")`.
   ├── Health:                health_check(), is_alive(), is_ready(), wait_for_ready()
   ├── Network:               create_network(), get_network(), delete_network(), get_topology(), get_statistics()
   ├── Training Control:      start_training(), stop_training(), pause_training(), resume_training(), reset_training()
@@ -200,13 +203,35 @@ correlated path is taken).
 
 ```text
 JuniperCascorClientError (base)
-  ├── JuniperCascorConnectionError       Network/connection failures
-  ├── JuniperCascorTimeoutError          Request timeout
-  ├── JuniperCascorNotFoundError         HTTP 404
-  ├── JuniperCascorConflictError         HTTP 409
-  ├── JuniperCascorValidationError       HTTP 400/422
-  └── JuniperCascorServiceUnavailableError  HTTP 503
+  ├── JuniperCascorConnectionError          Network/connection failures
+  ├── JuniperCascorTimeoutError             Request timeout
+  ├── JuniperCascorNotFoundError            HTTP 404
+  ├── JuniperCascorConflictError            HTTP 409
+  ├── JuniperCascorValidationError          HTTP 400/422
+  ├── JuniperCascorServiceUnavailableError  HTTP 503
+  ├── JuniperCascorOverloadError            Control-stream pending-command cap (256)
+  └── JuniperCascorConfigurationError       Hostless `base_url` (APD-CCLIENT-005 / #129)
 ```
+
+`JuniperCascorOverloadError` is already on main. `JuniperCascorConfigurationError` lands with
+[#129](https://github.com/pcalnon/juniper-cascor-client/pull/129) and is catchable as the base.
+Construction-time: `status_code` is `None` (no HTTP response).
+
+#### Base URL normalisation (do not remove)
+
+`JuniperCascorClient.__init__` (APD-CCLIENT-005, lands with #129) runs `_normalize_url` before
+building `api_url = f"{base_url}{API_VERSION_PATH}"`. Steps, pinned by
+`tests/test_client.py::TestClientInit`: strip whitespace → default `http://` when the value
+does not start with `URL_SCHEME_PREFIXES` (`http://`, `https://`) → reject an empty `netloc`
+with `JuniperCascorConfigurationError` → drop a trailing slash → strip a trailing `/v1`.
+
+Until #129 merges, construction still only `base_url.rstrip("/")`. A schemeless host, a
+`/v1`-suffixed origin (double `/v1` `api_url`), or a hostless value all construct successfully
+and fail opaquely on the first request.
+
+Deliberately out of scope (still `rstrip("/")` only, on main and after #129):
+`CascorTrainingStream`, `CascorControlStream` (`ws://` needs its own defaulting rules),
+`FakeCascorClient`, and `FakeCascorTrainingStream`. Do not pin this contract on the fake.
 
 #### Exception context (do not remove)
 
@@ -241,7 +266,10 @@ Constraints a refactor must not break:
 `FakeCascorClient` populates `status_code` on every HTTP-shaped error it raises
 (404 not-found, 409 conflict, 422 validation — the real service validates those
 inputs with pydantic `Field(ge=1)` / `Query(ge=, le=)`, which FastAPI answers
-422). Its one local-state error ("Client is closed") deliberately has none. The
+422). Its one local-state error ("Client is closed") deliberately has none. After
+APD-CCLIENT-005 / #129 the real client also raises `JuniperCascorConfigurationError`
+(hostless `base_url`) with `status_code=None`; the fake still only `rstrip("/")` and
+does **not** raise that type. Do not pin the normalisation contract on the fake. The
 fake claims full API parity, so a double raising the right type with
 `status_code=None` would let a consumer's test pass against behaviour production
 does not have.
@@ -256,7 +284,7 @@ package's tests.
 
 | Class | Purpose |
 |-------|---------|
-| `FakeCascorClient` | In-memory REST client fake with 5 scenarios, thread-safe, full API parity |
+| `FakeCascorClient` | In-memory REST client fake with 5 scenarios, thread-safe, full API parity except `base_url` (rstrip-only; no `_normalize_url`) |
 | `FakeCascorTrainingStream` | In-memory WebSocket stream fake with message injection |
 
 **Scenarios**: `idle`, `two_spiral_training`, `xor_converged`, `empty`, `error_prone`
@@ -381,6 +409,7 @@ Every previously inline literal in `client.py`, `ws_client.py`, `testing/fake_cl
 | Prefix / Group | Examples | Purpose |
 |----------------|----------|---------|
 | `API_KEY_*`, `API_VERSION_*` | `API_KEY_HEADER_NAME='X-API-Key'`, `API_KEY_ENV_VAR='JUNIPER_CASCOR_API_KEY'`, `API_VERSION_PATH='/v1'` | Wire-protocol identifiers shared with the `juniper-cascor` server |
+| `URL_SCHEME_*` | `URL_SCHEME_PREFIXES=('http://', 'https://')`, `DEFAULT_URL_SCHEME_PREFIX='http://'` | REST `base_url` normalisation (APD-CCLIENT-005 / #129). WS streams do not use these. |
 | `ENDPOINT_*`, `WS_*_PATH` | `ENDPOINT_TRAINING_START='/training/start'`, `ENDPOINT_NETWORK_TOPOLOGY='/network/topology'`, `WS_TRAINING_PATH='/ws/training'` | Relative paths under each FastAPI router (server prefix + this constant = full URL) |
 | `DEFAULT_*` | `DEFAULT_BASE_URL='http://localhost:8200'`, `DEFAULT_TIMEOUT_SECONDS`, `DEFAULT_BACKOFF_FACTOR=0.5` | Constructor defaults for `JuniperCascorClient` and `CascorTrainingStream` / `CascorControlStream` |
 | `MSG_TYPE_*` | `MSG_TYPE_HEARTBEAT='heartbeat'`, `MSG_TYPE_REGISTRATION_ACK` | WebSocket message-type discriminators (must remain bit-identical to the server's `MessageType` enum) |

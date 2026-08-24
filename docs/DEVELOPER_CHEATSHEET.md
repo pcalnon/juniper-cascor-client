@@ -1,7 +1,7 @@
 # Developer Cheatsheet — juniper-cascor-client
 
-**Version**: 1.0.0
-**Date**: 2026-03-15
+**Version**: 1.0.1
+**Date**: 2026-08-24
 **Project**: juniper-cascor-client
 
 ---
@@ -39,6 +39,10 @@ client = JuniperCascorClient(
 with JuniperCascorClient("http://localhost:8200") as client:
     client.health_check()
 ```
+
+Pass the origin, not `/v1`. After APD-CCLIENT-005 ([#129](https://github.com/pcalnon/juniper-cascor-client/pull/129)), `JuniperCascorClient` strips whitespace, defaults `http://`, rejects a hostless value with `JuniperCascorConfigurationError`, drops a trailing slash, and strips a trailing `/v1` so `api_url` is not `/v1/v1`. Until #129 merges, construction still only `rstrip("/")`. WS constructors and both fakes stay rstrip-only.
+
+> See: [docs/REFERENCE.md](REFERENCE.md#base-url-normalisation-apd-cclient-005) for the input/result table and the fake-parity pitfall.
 
 ### Key Methods
 
@@ -152,6 +156,8 @@ JuniperCascorClientError (base)
 +-- JuniperCascorConflictError           # 409 - State conflict
 +-- JuniperCascorValidationError         # 400/422
 +-- JuniperCascorServiceUnavailableError # 503
++-- JuniperCascorOverloadError           # Control WS pending-command cap (256)
++-- JuniperCascorConfigurationError      # Hostless base_url (after #129; no HTTP)
 ```
 
 > See: [docs/REFERENCE.md](REFERENCE.md#exception-hierarchy) for HTTP status code mapping.
@@ -171,11 +177,15 @@ JuniperCascorClientError (base)
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| `JuniperCascorConfigurationError` at construct (`base_url must include a host`) | Empty, whitespace-only, scheme-only, or path-only origin (after #129) | Pass a host, e.g. `http://localhost:8200`. Until #129 merges this type does not exist and the same values fail opaquely on the first request. |
+| First REST call 404s on `/v1/v1/...` | `base_url` included `/v1` (main / pre-#129) | Pass the origin only. After #129 the trailing `/v1` is stripped. |
 | `JuniperCascorConnectionError` | Service not running | Start juniper-cascor: `make up` in juniper-deploy or run natively |
 | `JuniperCascorConflictError` on start | Training already active | Call `stop_training()` or `reset_training()` first |
 | `JuniperCascorServiceUnavailableError` | Service overloaded or initializing | Retry after delay; use `wait_for_ready()` |
+| `JuniperCascorOverloadError` | More than 256 in-flight control-WS commands | Bound concurrent `command()` / `set_params()` callers |
 | WebSocket disconnects unexpectedly | Network interruption or server restart | Reconnect; `CascorTrainingStream` supports re-calling `connect()` |
 | Auth failures (401/403) | Missing or wrong API key | Set `JUNIPER_CASCOR_API_KEY` or pass `api_key=` to constructor |
+| Hostless URL accepted by `FakeCascorClient` | Fake still `rstrip("/")` only | Do not pin APD-CCLIENT-005 against the fake; use `JuniperCascorClient` |
 
 ---
 
