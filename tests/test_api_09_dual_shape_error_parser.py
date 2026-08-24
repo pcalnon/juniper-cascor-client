@@ -489,7 +489,10 @@ class TestRenderErrorDetailDegenerateShapes:
         """The consumer path: a mixed FastAPI-ish 422 must not crash inside
         ``_handle_response``, must keep the list on ``exc.detail``, and must
         render a readable message."""
-        detail = ["gateway timeout fragment", {"loc": ("query", "count"), "msg": "ensure this value is greater than 0"}]
+        # loc arrives as a JSON list (tuples do not survive the wire); mix in a
+        # non-dict item so the consumer path hits the same degenerate arm as
+        # the unit tests above.
+        detail = ["gateway timeout fragment", {"loc": ["query", "count"], "msg": "ensure this value is greater than 0"}]
         responses.add(responses.GET, f"{API_URL}/network", json={"detail": detail}, status=422)
 
         with pytest.raises(JuniperCascorValidationError) as excinfo:
