@@ -2,9 +2,9 @@
 
 ## Get juniper-cascor-client Working in 5 Minutes
 
-**Version:** 0.1.0
+**Version:** 0.1.2
 **Status:** Active
-**Last Updated:** March 3, 2026
+**Last Updated:** August 24, 2026
 **Project:** Juniper - CasCor Service Client Library
 
 ---
@@ -14,6 +14,7 @@
 - [Prerequisites](#prerequisites)
 - [Install](#1-install)
 - [REST Client](#2-rest-client)
+  - [Base URL](#base-url)
 - [WebSocket Streaming](#3-websocket-streaming)
 - [Error Handling](#4-error-handling)
 - [Testing](#5-testing)
@@ -48,7 +49,7 @@ pip install -e ".[dev]"
 ```python
 from juniper_cascor_client import JuniperCascorClient
 
-# Create client (default: localhost:8200)
+# Create client (default: localhost:8200). Pass the origin, not /v1.
 client = JuniperCascorClient("http://localhost:8200")
 
 # Check service health
@@ -78,6 +79,20 @@ with JuniperCascorClient("http://localhost:8200") as client:
     client.start_training(epochs=100)
 # Session automatically closed
 ```
+
+### Base URL
+
+Pass the service origin, not the `/v1` API prefix. After APD-CCLIENT-005 ([#129](https://github.com/pcalnon/juniper-cascor-client/pull/129)):
+
+```python
+JuniperCascorClient("localhost:8200")            # → http://localhost:8200
+JuniperCascorClient("http://localhost:8200/v1")  # → http://localhost:8200 (not /v1/v1)
+JuniperCascorClient("HTTPS://localhost:8200")    # → https://localhost:8200 (scheme match is case-insensitive)
+JuniperCascorClient("")                          # raises JuniperCascorConfigurationError
+JuniperCascorClient("http://user:secret@")       # also hostless — hostname is None even though netloc is truthy
+```
+
+Until #129 merges, construction still only `rstrip("/")` — the schemeless form and a `/v1` suffix fail opaquely (or hit `/v1/v1`) on the first request, and `HTTPS://host` would be re-prefixed into `http://HTTPS://host`. `CascorTrainingStream` / `CascorControlStream` (`ws://...`) do not run this normalisation.
 
 ### Wait for Service
 
@@ -134,13 +149,17 @@ async def with_callbacks():
 ```python
 from juniper_cascor_client import (
     JuniperCascorClient,
+    JuniperCascorConfigurationError,  # after #129
     JuniperCascorConnectionError,
     JuniperCascorConflictError,
     JuniperCascorValidationError,
 )
 
 try:
+    client = JuniperCascorClient("http://localhost:8200")
     client.start_training(epochs=100)
+except JuniperCascorConfigurationError as e:
+    print(f"Bad base_url: {e}")  # hostless origin; construction-time, no HTTP
 except JuniperCascorConflictError as e:
     print(f"Already training: {e}")
 except JuniperCascorValidationError as e:
@@ -177,6 +196,6 @@ The test suite includes `FakeCascorClient` and `FakeCascorTrainingStream` for te
 
 ---
 
-**Last Updated:** March 3, 2026
-**Version:** 0.1.0
+**Last Updated:** August 24, 2026
+**Version:** 0.1.2
 **Status:** Active
