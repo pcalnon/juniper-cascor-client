@@ -15,13 +15,18 @@ Version: 0.7.0
 License: MIT License
 """
 
-from typing import List
+from typing import List, Tuple
 
 # ─── Service Configuration ───────────────────────────────────────────────────
 
 DEFAULT_BASE_URL: str = "http://localhost:8200"
 DEFAULT_WS_BASE_URL: str = "ws://localhost:8200"
 API_VERSION_PATH: str = "/v1"
+
+# ─── Base-URL normalisation (APD-CCLIENT-005; mirrors the sibling clients) ───
+
+URL_SCHEME_PREFIXES: Tuple[str, str] = ("http://", "https://")
+DEFAULT_URL_SCHEME_PREFIX: str = "http://"
 
 # ─── HTTP Configuration ──────────────────────────────────────────────────────
 

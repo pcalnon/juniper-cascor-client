@@ -7,6 +7,7 @@ and visualization data access for JuniperCascor consumers.
 import os
 import time
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -24,6 +25,7 @@ from juniper_cascor_client.constants import (
     DEFAULT_READY_TIMEOUT,
     DEFAULT_REQUEST_TIMEOUT,
     DEFAULT_RETRY_COUNT,
+    DEFAULT_URL_SCHEME_PREFIX,
     ENDPOINT_DATASET,
     ENDPOINT_DATASET_DATA,
     ENDPOINT_DECISION_BOUNDARY,
@@ -55,8 +57,9 @@ from juniper_cascor_client.constants import (
     HTTP_503_SERVICE_UNAVAILABLE,
     RETRY_ALLOWED_METHODS,
     RETRYABLE_STATUS_CODES,
+    URL_SCHEME_PREFIXES,
 )
-from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorTimeoutError, JuniperCascorValidationError
+from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConfigurationError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorTimeoutError, JuniperCascorValidationError
 
 
 def _render_error_detail(detail: Any) -> str:
@@ -120,7 +123,7 @@ class JuniperCascorClient:
         retries: int = DEFAULT_RETRY_COUNT,
         api_key: Optional[str] = None,
     ) -> None:
-        self.base_url = base_url.rstrip("/")
+        self.base_url = self._normalize_url(base_url)
         self.api_url = f"{self.base_url}{API_VERSION_PATH}"
         self.timeout = timeout
         self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR)
@@ -161,6 +164,32 @@ class JuniperCascorClient:
 
         if self.api_key:
             self.session.headers[API_KEY_HEADER_NAME] = self.api_key
+
+    def _normalize_url(self, url: str) -> str:
+        """Normalize the base URL: ensure a scheme, drop a trailing slash and any ``/v1`` suffix.
+
+        This client had **no** URL treatment beyond ``rstrip("/")`` — the only
+        Juniper client with neither scheme defaulting nor host validation
+        (defect-register ``APD-CCLIENT-005``). Port of the sibling clients'
+        normalisation (juniper-recurrence-client is the reference; the same
+        netloc guard landed in juniper-data-client as ``APD-DCLIENT-004``).
+
+        Raises:
+            JuniperCascorConfigurationError: when ``base_url`` carries no host
+                (an empty string, a bare scheme, or a path-only value) — a
+                misconfiguration that would otherwise normalize to a broken,
+                hostless URL and fail opaquely on the first request.
+        """
+        url = url.strip()
+        if not url.startswith(URL_SCHEME_PREFIXES):
+            url = f"{DEFAULT_URL_SCHEME_PREFIX}{url}"
+        parsed = urlparse(url)
+        if not parsed.netloc:
+            raise JuniperCascorConfigurationError(f"base_url must include a host; got {url!r}")
+        normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
+        if normalized.endswith(API_VERSION_PATH):
+            normalized = normalized[: -len(API_VERSION_PATH)]
+        return normalized
 
     # ─── Health ──────────────────────────────────────────────────────────
 
