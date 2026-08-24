@@ -181,7 +181,14 @@ class JuniperCascorClient:
                 hostless URL and fail opaquely on the first request.
         """
         url = url.strip()
-        if not url.startswith(URL_SCHEME_PREFIXES):
+        # RFC 3986 schemes are case-insensitive. A case-sensitive startswith
+        # treats ``HTTP://host`` / ``HTTPS://host`` as schemeless, prefixes
+        # ``http://``, and ``urlparse`` then takes netloc ``HTTP:`` / ``HTTPS:``.
+        # Construction would succeed; every request would target the wrong host.
+        # ``requests`` itself accepts the uppercase form (it lowercases the
+        # scheme when preparing the request), so this would be a regression of
+        # URLs that worked before APD-CCLIENT-005.
+        if not url.lower().startswith(URL_SCHEME_PREFIXES):
             url = f"{DEFAULT_URL_SCHEME_PREFIX}{url}"
         parsed = urlparse(url)
         if not parsed.netloc:

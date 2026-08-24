@@ -61,6 +61,28 @@ class TestClientInit:
         assert client.base_url == "https://example.com:9000"
         client.close()
 
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("HTTP://example.com:9000", "http://example.com:9000"),
+            ("HTTPS://example.com:9000", "https://example.com:9000"),
+            ("Http://example.com:9000", "http://example.com:9000"),
+            ("Https://example.com:9000", "https://example.com:9000"),
+            ("HTTPS://example.com:9000/v1", "https://example.com:9000"),
+        ],
+    )
+    def test_normalize_url_scheme_is_case_insensitive(self, raw, expected):
+        """RFC 3986 schemes are case-insensitive; do not prefix http:// onto HTTP(S)://.
+
+        A case-sensitive startswith treated these as schemeless, producing
+        ``http://HTTPS://host`` with netloc ``HTTPS:``. Construction succeeded
+        and every request targeted the wrong host.
+        """
+        client = JuniperCascorClient(raw)
+        assert client.base_url == expected
+        assert client.api_url == f"{expected}/v1"
+        client.close()
+
     @pytest.mark.parametrize("hostless", ["", "   ", "http://", "https://", "/v1", "http:///v1"])
     def test_normalize_hostless_url_raises_configuration_error(self, hostless):
         """A base URL with no host must fail at construction with the typed
