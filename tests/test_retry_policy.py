@@ -43,33 +43,24 @@ class TestClientRetryConfiguration:
         # APD-CCLIENT-013: the value was hardcoded to DEFAULT_BACKOFF_FACTOR at
         # session build; both siblings expose it as a constructor parameter.
         # Asserted where it takes effect — the mounted adapter's Retry.
-        client = JuniperCascorClient(base_url="http://localhost:8200", backoff_factor=2.5)
-        try:
+        with JuniperCascorClient(base_url="http://localhost:8200", backoff_factor=2.5) as client:
             adapter = client.session.get_adapter("http://localhost:8200/")
             assert adapter.max_retries.backoff_factor == 2.5
             assert client.backoff_factor == 2.5
-        finally:
-            client.close()
 
     def test_backoff_factor_defaults_to_constant(self) -> None:
-        client = JuniperCascorClient(base_url="http://localhost:8200")
-        try:
+        with JuniperCascorClient(base_url="http://localhost:8200") as client:
             adapter = client.session.get_adapter("http://localhost:8200/")
             assert adapter.max_retries.backoff_factor == constants.DEFAULT_BACKOFF_FACTOR
-        finally:
-            client.close()
 
     def test_adapter_sets_both_pool_knobs(self) -> None:
         # APD-CCLIENT-009: pool_connections was omitted while both siblings set
         # it alongside pool_maxsize — silent sibling drift, not a decision.
-        client = JuniperCascorClient(base_url="http://localhost:8200")
-        try:
+        with JuniperCascorClient(base_url="http://localhost:8200") as client:
             for scheme_probe in ("http://localhost:8200/", "https://localhost:8200/"):
                 adapter = client.session.get_adapter(scheme_probe)
                 assert adapter._pool_connections == constants.DEFAULT_POOL_CONNECTIONS
                 assert adapter._pool_maxsize == constants.DEFAULT_POOL_MAXSIZE
-        finally:
-            client.close()
 
     def test_adapter_call_passes_both_pool_knobs_explicitly(self) -> None:
         # The runtime arm above is blind to the original omission: requests'
@@ -82,9 +73,7 @@ class TestClientRetryConfiguration:
         import inspect
         import pathlib
 
-        import juniper_cascor_client.client as client_module
-
-        source = pathlib.Path(inspect.getfile(client_module)).read_text(encoding="utf-8")
+        source = pathlib.Path(inspect.getfile(JuniperCascorClient)).read_text(encoding="utf-8")
         adapter_calls = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Call) and getattr(node.func, "id", getattr(node.func, "attr", None)) == "HTTPAdapter"]
         assert adapter_calls, "expected at least one HTTPAdapter(...) construction in client.py"
         for call in adapter_calls:
