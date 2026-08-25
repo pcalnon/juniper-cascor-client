@@ -29,8 +29,11 @@ def test_auto_pong_is_keyword_only(cls):
 
 
 def test_positional_auto_pong_raises_typeerror():
+    # Splat-called so CodeQL's static arity check (py/call/wrong-number-class-arguments)
+    # does not flag the deliberately illegal call — raising is the assertion here.
+    positional = ("ws://localhost:8200", None, None, False)
     with pytest.raises(TypeError):
-        CascorTrainingStream("ws://localhost:8200", None, None, False)
+        CascorTrainingStream(*positional)
 
 
 def test_keyword_auto_pong_still_works():
