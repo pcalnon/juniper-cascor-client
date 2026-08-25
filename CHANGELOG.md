@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`create_network` is fully typed — the server's 14 `NetworkCreateRequest` fields as keyword-only
+  `Optional` parameters, with `**extra` demoted to a loud forward-compat channel** (defect-register
+  `APD-CCLIENT-011`). The old `**kwargs: Any` surface typed none of its 11 documented parameters,
+  claimed three were "(required)" when the server defaults every field, still advertised
+  `epochs_max` after it left the server's create surface — and its blind pass-through fed the
+  server's silent-ignore behavior, where a typo'd hyperparameter vanishes without a trace (that is
+  exactly how retired `epochs_max` senders keep "working"). Now: only parameters the caller sets are
+  sent (server defaults stay authoritative); `init_output_weights` / `optimizer_type` /
+  `activation_function_name` are deliberately `str` rather than duplicated Literals so a newer
+  server's registry additions stay callable from an older client (the server 422s bad values);
+  unknown keys still forward via `**extra` — canopy's dict-splat adapter keeps working unchanged —
+  but now log a WARNING naming the keys. `FakeCascorClient.create_network` mirrors the signature
+  exactly (pinned by a parity test); its stricter-than-server validation posture (requiring
+  `input_size`/`output_size`/`learning_rate` that the real server defaults, and defaulting the
+  retired `epochs_max` into its config) is an **observed divergence deliberately left unchanged**
+  and recorded with the register close.
+
 - **`auto_pong` is keyword-only on all three WS stream constructors** — `CascorTrainingStream`,
   `CascorControlStream`, and `FakeCascorTrainingStream` (defect-register `APD-CCLIENT-012`). A
   trailing positional-or-keyword boolean made `CascorTrainingStream("ws://h", None, None, False)`
