@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`auto_pong` is keyword-only on all three WS stream constructors** — `CascorTrainingStream`,
+  `CascorControlStream`, and `FakeCascorTrainingStream` (defect-register `APD-CCLIENT-012`). A
+  trailing positional-or-keyword boolean made `CascorTrainingStream("ws://h", None, None, False)`
+  legal and unreadable, and any future parameter inserted before it would silently rebind the
+  boolean. **Breaking only for positional calls reaching that slot**: an ecosystem census found no
+  construction passing more than one positional argument and every `auto_pong` use already by
+  keyword. The fake mirrors the boundary so consumer tests fail exactly as production would; a
+  signature-pin test holds all three. The legacy `auto_pong=False` posture's missing removal date
+  — the row's other half — is the deprecation-machinery question tracked by open `APD-ECO-007`.
+
 ### Added
 
 - **`backoff_factor` is constructor-configurable** (defect-register `APD-CCLIENT-013`). The retry

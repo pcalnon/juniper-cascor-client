@@ -62,6 +62,9 @@ class FakeCascorTrainingStream:
         delay: float = 0.1,
         base_url: str = "ws://fake-cascor:8200",
         api_key: Optional[str] = None,
+        # APD-CCLIENT-012 parity: keyword-only exactly like the real streams,
+        # so a consumer test calling the fake positionally fails as production would.
+        *,
         auto_pong: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
