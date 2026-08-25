@@ -40,6 +40,10 @@ DEFAULT_BACKOFF_FACTOR: float = 0.5
 # bubble up as hard failures to callers.
 RETRYABLE_STATUS_CODES: List[int] = [429, 502, 503, 504]
 RETRY_ALLOWED_METHODS: List[str] = ["GET", "POST", "DELETE", "PUT", "PATCH"]
+# APD-CCLIENT-009: both sibling clients set pool_connections alongside
+# pool_maxsize (10/10); omitting it here left the adapter on urllib3's
+# default and encoded silent sibling drift rather than a decision.
+DEFAULT_POOL_CONNECTIONS: int = 10
 DEFAULT_POOL_MAXSIZE: int = 10
 
 # ─── Readiness Polling ───────────────────────────────────────────────────────

@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`backoff_factor` is constructor-configurable** (defect-register `APD-CCLIENT-013`). The retry
+  backoff was hardcoded to `DEFAULT_BACKOFF_FACTOR` at session build; both sibling clients expose
+  it as a constructor parameter. Inserted in the sibling position (before `api_key`) — an
+  ecosystem census found no call passing more than one positional argument, so nothing rebinds.
+
 ### Fixed
+
+- **The HTTP adapter now sets `pool_connections` alongside `pool_maxsize`** (defect-register
+  `APD-CCLIENT-009`). Both siblings set the pair explicitly (10/10); omitting one here left it on
+  urllib3's default — silent sibling drift rather than a decision. New `DEFAULT_POOL_CONNECTIONS`
+  constant; both knobs pinned by test.
+- **mypy targets 3.12, matching `requires-python >=3.12`** (defect-register `APD-CCLIENT-007`).
+  The strict gate was type-checking a Python this package refuses to install on. A new drift test
+  pins `[tool.mypy] python_version` to the `requires-python` floor so the two cannot drift apart
+  again.
 
 - **A raising message listener no longer tears down the training stream** (defect-register
   `APD-CCLIENT-006`). `_dispatch` ran each registered callback bare while its neighbour
