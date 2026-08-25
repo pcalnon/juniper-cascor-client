@@ -15,7 +15,6 @@ import inspect
 import json
 import logging
 
-import pytest
 import responses
 
 from juniper_cascor_client import JuniperCascorClient
