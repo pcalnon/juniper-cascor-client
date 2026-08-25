@@ -246,6 +246,10 @@ class CascorTrainingStream(_WsLivenessMixin):
         base_url: str = DEFAULT_WS_BASE_URL,
         api_key: Optional[str] = None,
         origin: Optional[str] = None,
+        # APD-CCLIENT-012: keyword-only — a trailing positional boolean invites
+        # unreadable call sites; every existing use already passes it by
+        # keyword (ecosystem census: max 1 positional arg on this class).
+        *,
         auto_pong: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -517,6 +521,8 @@ class CascorControlStream(_WsLivenessMixin):
         api_key: Optional[str] = None,
         timeout: float = DEFAULT_CONTROL_STREAM_TIMEOUT,
         origin: Optional[str] = None,
+        # APD-CCLIENT-012: keyword-only, mirroring CascorTrainingStream.
+        *,
         auto_pong: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
