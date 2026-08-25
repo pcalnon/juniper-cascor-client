@@ -312,19 +312,60 @@ class FakeCascorClient:
 
     # ─── Network ─────────────────────────────────────────────────────────
 
-    def create_network(self, **kwargs: Any) -> Dict[str, Any]:
+    def create_network(
+        self,
+        *,
+        input_size: Optional[int] = None,
+        output_size: Optional[int] = None,
+        learning_rate: Optional[float] = None,
+        candidate_learning_rate: Optional[float] = None,
+        max_hidden_units: Optional[int] = None,
+        candidate_pool_size: Optional[int] = None,
+        correlation_threshold: Optional[float] = None,
+        patience: Optional[int] = None,
+        candidate_epochs: Optional[int] = None,
+        output_epochs: Optional[int] = None,
+        max_iterations: Optional[int] = None,
+        init_output_weights: Optional[str] = None,
+        optimizer_type: Optional[str] = None,
+        activation_function_name: Optional[str] = None,
+        **extra: Any,
+    ) -> Dict[str, Any]:
         """Create a new CasCor network.
 
-        Args:
-            input_size: Number of input features (required).
-            output_size: Number of output classes (required).
-            learning_rate: Output layer learning rate (required).
-            **kwargs: Additional network configuration parameters.
+        Signature mirrors :meth:`JuniperCascorClient.create_network`
+        (``APD-CCLIENT-011``) so a consumer test drives the fake through the
+        exact calling convention production accepts. The fake's *validation*
+        posture is unchanged and deliberately stricter than the real server
+        (which defaults every field): missing ``input_size`` /
+        ``output_size`` / ``learning_rate`` still raise 422 outside
+        ``SCENARIO_EMPTY`` — an observed fake-vs-server divergence recorded
+        with the register close, not silently redefined here.
 
         Raises:
             JuniperCascorValidationError: If required parameters are missing.
             JuniperCascorConflictError: If a network already exists.
         """
+        kwargs: Dict[str, Any] = {}
+        for name, value in (
+            ("input_size", input_size),
+            ("output_size", output_size),
+            ("learning_rate", learning_rate),
+            ("candidate_learning_rate", candidate_learning_rate),
+            ("max_hidden_units", max_hidden_units),
+            ("candidate_pool_size", candidate_pool_size),
+            ("correlation_threshold", correlation_threshold),
+            ("patience", patience),
+            ("candidate_epochs", candidate_epochs),
+            ("output_epochs", output_epochs),
+            ("max_iterations", max_iterations),
+            ("init_output_weights", init_output_weights),
+            ("optimizer_type", optimizer_type),
+            ("activation_function_name", activation_function_name),
+        ):
+            if value is not None:
+                kwargs[name] = value
+        kwargs.update(extra)
         with self._lock:
             self._check_closed()
             self._maybe_raise_error("create_network")
