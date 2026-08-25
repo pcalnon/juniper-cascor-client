@@ -38,3 +38,44 @@ class TestClientRetryConfiguration:
             assert 429 in forcelist
         finally:
             client.close()
+
+    def test_backoff_factor_is_constructor_configurable(self) -> None:
+        # APD-CCLIENT-013: the value was hardcoded to DEFAULT_BACKOFF_FACTOR at
+        # session build; both siblings expose it as a constructor parameter.
+        # Asserted where it takes effect — the mounted adapter's Retry.
+        with JuniperCascorClient(base_url="http://localhost:8200", backoff_factor=2.5) as client:
+            adapter = client.session.get_adapter("http://localhost:8200/")
+            assert adapter.max_retries.backoff_factor == 2.5
+            assert client.backoff_factor == 2.5
+
+    def test_backoff_factor_defaults_to_constant(self) -> None:
+        with JuniperCascorClient(base_url="http://localhost:8200") as client:
+            adapter = client.session.get_adapter("http://localhost:8200/")
+            assert adapter.max_retries.backoff_factor == constants.DEFAULT_BACKOFF_FACTOR
+
+    def test_adapter_sets_both_pool_knobs(self) -> None:
+        # APD-CCLIENT-009: pool_connections was omitted while both siblings set
+        # it alongside pool_maxsize — silent sibling drift, not a decision.
+        with JuniperCascorClient(base_url="http://localhost:8200") as client:
+            for scheme_probe in ("http://localhost:8200/", "https://localhost:8200/"):
+                adapter = client.session.get_adapter(scheme_probe)
+                assert adapter._pool_connections == constants.DEFAULT_POOL_CONNECTIONS
+                assert adapter._pool_maxsize == constants.DEFAULT_POOL_MAXSIZE
+
+    def test_adapter_call_passes_both_pool_knobs_explicitly(self) -> None:
+        # The runtime arm above is blind to the original omission: requests'
+        # own pool_connections default is also 10, so dropping the explicit
+        # kwarg changes nothing observable today — it only re-introduces the
+        # silent dependence on urllib3's default that APD-CCLIENT-009 filed.
+        # Pin the call site itself: every HTTPAdapter(...) in client.py must
+        # pass both knobs by keyword.
+        import ast
+        import inspect
+        import pathlib
+
+        source = pathlib.Path(inspect.getfile(JuniperCascorClient)).read_text(encoding="utf-8")
+        adapter_calls = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Call) and getattr(node.func, "id", getattr(node.func, "attr", None)) == "HTTPAdapter"]
+        assert adapter_calls, "expected at least one HTTPAdapter(...) construction in client.py"
+        for call in adapter_calls:
+            kwargs = {kw.arg for kw in call.keywords}
+            assert {"pool_connections", "pool_maxsize"} <= kwargs, f"HTTPAdapter call at line {call.lineno} must pass pool_connections AND pool_maxsize explicitly; got {sorted(kwargs)}"

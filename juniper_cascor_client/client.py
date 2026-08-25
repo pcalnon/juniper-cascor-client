@@ -20,6 +20,7 @@ from juniper_cascor_client.constants import (
     DEFAULT_BACKOFF_FACTOR,
     DEFAULT_BASE_URL,
     DEFAULT_DECISION_BOUNDARY_RESOLUTION,
+    DEFAULT_POOL_CONNECTIONS,
     DEFAULT_POOL_MAXSIZE,
     DEFAULT_READY_POLL_INTERVAL,
     DEFAULT_READY_TIMEOUT,
@@ -121,18 +122,24 @@ class JuniperCascorClient:
         base_url: str = DEFAULT_BASE_URL,
         timeout: int = DEFAULT_REQUEST_TIMEOUT,
         retries: int = DEFAULT_RETRY_COUNT,
+        # APD-CCLIENT-013: constructor-configurable like both siblings (and
+        # placed where they place it). An ecosystem census found no call
+        # passing more than one positional argument, so the insertion before
+        # ``api_key`` rebinds nothing.
+        backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
         api_key: Optional[str] = None,
     ) -> None:
         self.base_url = self._normalize_url(base_url)
         self.api_url = f"{self.base_url}{API_VERSION_PATH}"
         self.timeout = timeout
+        self.backoff_factor = backoff_factor
         self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR)
 
         self.session = requests.Session()
 
         retry_strategy = Retry(
             total=retries,
-            backoff_factor=DEFAULT_BACKOFF_FACTOR,
+            backoff_factor=backoff_factor,
             status_forcelist=RETRYABLE_STATUS_CODES,
             allowed_methods=RETRY_ALLOWED_METHODS,
             # APD-CCLIENT-002: hand the exhausted response BACK instead of
@@ -158,7 +165,11 @@ class JuniperCascorClient:
             # urllib3 and are still caught as ConnectionError / Timeout.
             raise_on_status=False,
         )
-        adapter = HTTPAdapter(max_retries=retry_strategy, pool_maxsize=DEFAULT_POOL_MAXSIZE)
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=DEFAULT_POOL_CONNECTIONS,
+            pool_maxsize=DEFAULT_POOL_MAXSIZE,
+        )
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
 
