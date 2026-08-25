@@ -28,12 +28,12 @@ def test_auto_pong_is_keyword_only(cls):
     assert kind is inspect.Parameter.KEYWORD_ONLY, f"{cls.__name__}.auto_pong must be keyword-only (APD-CCLIENT-012); got {kind!r}"
 
 
-def test_positional_auto_pong_raises_typeerror():
-    # Splat-called so CodeQL's static arity check (py/call/wrong-number-class-arguments)
-    # does not flag the deliberately illegal call — raising is the assertion here.
-    positional = ("ws://localhost:8200", None, None, False)
-    with pytest.raises(TypeError):
-        CascorTrainingStream(*positional)
+# No runtime "positional call raises TypeError" arm on purpose: the KEYWORD_ONLY
+# kind pinned above implies that TypeError by Python semantics, and CodeQL's
+# arity check (py/call/wrong-number-class-arguments) statically flags any
+# visible wrong-arity instantiation — including a literal-tuple splat — so the
+# demonstration arm cannot be written without suppressions. The kind arm alone
+# fails when the boundary is removed (mutation-verified).
 
 
 def test_keyword_auto_pong_still_works():
