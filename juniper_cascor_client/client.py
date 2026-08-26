@@ -19,6 +19,7 @@ from juniper_cascor_client.constants import (
     API_KEY_HEADER_NAME,
     API_VERSION_PATH,
     DEFAULT_BACKOFF_FACTOR,
+    DEFAULT_BACKOFF_JITTER,
     DEFAULT_BASE_URL,
     DEFAULT_DECISION_BOUNDARY_RESOLUTION,
     DEFAULT_POOL_CONNECTIONS,
@@ -143,6 +144,8 @@ class JuniperCascorClient:
         retry_strategy = Retry(
             total=retries,
             backoff_factor=backoff_factor,
+            # APD-ECO-002: decorrelate retry schedules across client instances.
+            backoff_jitter=DEFAULT_BACKOFF_JITTER,
             status_forcelist=RETRYABLE_STATUS_CODES,
             allowed_methods=RETRY_ALLOWED_METHODS,
             # APD-CCLIENT-002: hand the exhausted response BACK instead of
