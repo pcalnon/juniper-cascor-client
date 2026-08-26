@@ -33,6 +33,13 @@ DEFAULT_URL_SCHEME_PREFIX: str = "http://"
 DEFAULT_REQUEST_TIMEOUT: int = 30
 DEFAULT_RETRY_COUNT: int = 3
 DEFAULT_BACKOFF_FACTOR: float = 0.5
+# APD-ECO-002: urllib3 applies this as an ABSOLUTE additive term --
+# ``backoff_value += random.random() * backoff_jitter`` -- not a proportional
+# one. Without it every client that trips the same transient outage retries on
+# an identical schedule, so a service that is already failing is hit by a
+# synchronised herd. Matched to DEFAULT_BACKOFF_FACTOR so the spread is a full
+# window on the first retry, which is the step that carries the most callers.
+DEFAULT_BACKOFF_JITTER: float = 0.5
 # XREPO-02 / CC-02 (2026-04-24): 503 is the canonical transient error
 # emitted by services during restart / deploy; 429 (Too Many Requests)
 # is also safe to retry when the server sets Retry-After. Both were
