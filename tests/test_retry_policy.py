@@ -119,3 +119,54 @@ class TestRetryBackoffJitter:
         base = constants.DEFAULT_BACKOFF_FACTOR * 2
         assert min(observed) >= base
         assert max(observed) <= base + constants.DEFAULT_BACKOFF_JITTER
+
+
+class TestRetryAllowedMethods:
+    """APD-CCLIENT-001: only idempotent methods may be replayed by the adapter.
+
+    urllib3 replays inside the HTTP adapter, where the caller never learns it
+    happened, and the stack has no idempotency key (APD-ECO-001). A transient
+    502 on ``POST /v1/snapshots`` therefore wrote a duplicate snapshot row.
+    """
+
+    # RFC 9110 §9.2.2 — PUT and DELETE are idempotent and the safe methods are
+    # too, but this client additionally excludes DELETE (its one call site
+    # destroys a trained network) and PUT (never issued). See constants.py.
+    NON_RETRYABLE = ("POST", "PATCH", "DELETE", "PUT")
+
+    @pytest.mark.parametrize("method", NON_RETRYABLE)
+    def test_mutating_method_is_not_in_allow_list(self, method: str) -> None:
+        assert method not in constants.RETRY_ALLOWED_METHODS, f"{method} is auto-retried with no idempotency key -- a transient 5xx " f"silently repeats the mutation (APD-CCLIENT-001). Got {constants.RETRY_ALLOWED_METHODS}"
+
+    @pytest.mark.parametrize("method", ["GET", "HEAD"])
+    def test_safe_method_is_still_retried(self, method: str) -> None:
+        # Negative control: the fix must not disable retry altogether. Dropping
+        # GET would turn every transient restart back into a hard failure,
+        # which is the outage XREPO-02 exists to prevent.
+        assert method in constants.RETRY_ALLOWED_METHODS
+
+    def test_adapter_allow_list_matches_constants(self) -> None:
+        with JuniperCascorClient(base_url="http://localhost:8200", retries=3) as client:
+            retry = client.session.get_adapter("http://localhost:8200/").max_retries
+            assert set(retry.allowed_methods or ()) == set(constants.RETRY_ALLOWED_METHODS)
+
+    @pytest.mark.parametrize("method", NON_RETRYABLE)
+    def test_urllib3_refuses_to_replay_mutation(self, method: str) -> None:
+        """The decisive arm: ask urllib3's own decision function, not the constant.
+
+        The structural pins above pass if the list is right but never reaches
+        urllib3 -- e.g. a future refactor that builds Retry() without
+        ``allowed_methods``, which silently restores urllib3's default (and its
+        default DOES include DELETE and PUT). Only ``is_retry`` proves the
+        policy is the one actually in force on the mounted adapter.
+        """
+        with JuniperCascorClient(base_url="http://localhost:8200", retries=3) as client:
+            retry = client.session.get_adapter("http://localhost:8200/").max_retries
+        for code in constants.RETRYABLE_STATUS_CODES:
+            assert not retry.is_retry(method, code), f"{method} would be replayed on HTTP {code}"
+
+    @pytest.mark.parametrize("code", [429, 502, 503, 504])
+    def test_urllib3_still_replays_get(self, code: int) -> None:
+        with JuniperCascorClient(base_url="http://localhost:8200", retries=3) as client:
+            retry = client.session.get_adapter("http://localhost:8200/").max_retries
+        assert retry.is_retry("GET", code), f"GET must still retry on transient HTTP {code}"
