@@ -92,3 +92,14 @@ class JuniperCascorServiceUnavailableError(JuniperCascorClientError):
 
 class JuniperCascorOverloadError(JuniperCascorClientError):
     """Raised when too many concurrent commands are pending (bounded map full)."""
+
+
+class JuniperCascorConfigurationError(JuniperCascorClientError):
+    """Raised when juniper-cascor client configuration is missing or invalid.
+
+    Completes the sibling alignment: juniper-data-client and
+    juniper-recurrence-client both carry a configuration error and raise it
+    for a hostless ``base_url`` (``APD-DCLIENT-004`` / the recurrence
+    reference implementation); this client gained the same guard with
+    ``APD-CCLIENT-005``.
+    """
