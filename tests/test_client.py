@@ -74,7 +74,66 @@ class TestClientInit:
         assert client.base_url == "http://example.com:9000"
         client.close()
 
-    @pytest.mark.parametrize("hostless", ["", "   ", "http://", "https://", "/v1", "http:///v1", "http://user:secret@"])
+    def test_normalize_url_preserves_userinfo_when_host_is_present(self):
+        """hostname-not-netloc must not reject a URL that has both userinfo and a host.
+
+        Rebuilding from ``hostname`` would strip credentials; reconstruction
+        uses ``netloc`` so ``user:secret@example.com:9000`` is preserved.
+        """
+        client = JuniperCascorClient("http://user:secret@example.com:9000")
+        assert client.base_url == "http://user:secret@example.com:9000"
+        assert client.api_url == "http://user:secret@example.com:9000/v1"
+        client.close()
+
+    def test_normalize_url_accepts_ipv6_host(self):
+        """urlparse.hostname for IPv6 is ``::1`` (no brackets) while netloc keeps
+        ``[::1]:port``. The emptiness guard must use hostname; reconstruction
+        must use netloc or the brackets (and the port) are lost.
+        """
+        client = JuniperCascorClient("http://[::1]:8200")
+        assert client.base_url == "http://[::1]:8200"
+        assert client.api_url == "http://[::1]:8200/v1"
+        client.close()
+
+    def test_normalize_url_strips_v1_after_trailing_slash(self):
+        """rstrip('/') then strip a trailing /v1 — reversing that order would
+        leave ``/v1`` and produce a double-``/v1`` api_url (APD-CCLIENT-005).
+        """
+        client = JuniperCascorClient("http://example.com:9000/v1/")
+        assert client.base_url == "http://example.com:9000"
+        assert client.api_url == "http://example.com:9000/v1"
+        client.close()
+
+    @pytest.mark.parametrize(
+        "raw, expected_base",
+        [
+            ("http://example.com:9000/cascor", "http://example.com:9000/cascor"),
+            ("http://example.com:9000/cascor/v1", "http://example.com:9000/cascor"),
+            ("http://example.com:9000/cascor/v1/", "http://example.com:9000/cascor"),
+        ],
+    )
+    def test_normalize_url_preserves_non_v1_path_prefix(self, raw, expected_base):
+        """A reverse-proxy prefix must survive; only a trailing ``/v1`` is stripped."""
+        client = JuniperCascorClient(raw)
+        assert client.base_url == expected_base
+        assert client.api_url == f"{expected_base}/v1"
+        client.close()
+
+    @pytest.mark.parametrize(
+        "hostless",
+        [
+            "",
+            "   ",
+            "http://",
+            "https://",
+            "/v1",
+            "http:///v1",
+            "http://user:secret@",
+            # netloc is ':8200' (truthy) while hostname is None — the same
+            # hostname-not-netloc finding as the userinfo-only authority.
+            "http://:8200",
+        ],
+    )
     def test_normalize_hostless_url_raises_configuration_error(self, hostless):
         """A base URL with no host must fail at construction with the typed
         error, not opaquely on the first request (APD-CCLIENT-005)."""
