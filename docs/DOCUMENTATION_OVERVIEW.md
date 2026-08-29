@@ -2,9 +2,9 @@
 
 ## Navigation Guide to juniper-cascor-client Documentation
 
-**Version:** 0.1.0
+**Version:** 0.1.2
 **Status:** Active
-**Last Updated:** March 3, 2026
+**Last Updated:** August 24, 2026
 **Project:** Juniper - CasCor Service Client Library
 
 ---
@@ -26,6 +26,7 @@
 |------|----------|----------|
 | **Install and use the client** | [QUICK_START.md](QUICK_START.md) | docs/ |
 | **See the full API reference** | [REFERENCE.md](REFERENCE.md) | docs/ |
+| **Understand `base_url` normalisation** | [REFERENCE.md — Base URL normalisation](REFERENCE.md#base-url-normalisation-apd-cclient-005) | docs/ |
 | **Understand the project** | [README.md](../README.md) | Root |
 | **See development conventions** | [AGENTS.md](../AGENTS.md) | Root |
 | **See version history** | [CHANGELOG.md](../CHANGELOG.md) | Root |
@@ -41,9 +42,9 @@
 | File | Lines | Type | Purpose |
 |------|-------|------|---------|
 | **DOCUMENTATION_OVERVIEW.md** | ~120 | Overview | This file -- navigation index |
-| **QUICK_START.md** | ~140 | Tutorial | Install, configure, and use in 5 minutes |
-| **REFERENCE.md** | ~330 | Reference | Complete REST, WebSocket, exception, and testing reference |
-| **DEVELOPER_CHEATSHEET.md** | ~100 | Cheatsheet | Quick-reference card for common development tasks |
+| **QUICK_START.md** | ~200 | Tutorial | Install, configure, `base_url` normalisation, and use in 5 minutes |
+| **REFERENCE.md** | ~460 | Reference | Complete REST, WebSocket, exception, `base_url` normalisation, and testing reference |
+| **DEVELOPER_CHEATSHEET.md** | ~190 | Cheatsheet | Quick-reference card for common development tasks |
 
 ### Root Directory
 
@@ -97,8 +98,8 @@ juniper-ml ──meta-package──> juniper-cascor-client
 
 ---
 
-**Last Updated:** March 3, 2026
-**Version:** 0.1.0
+**Last Updated:** August 24, 2026
+**Version:** 0.1.2
 **Maintainer:** Paul Calnon
 
 > See the [Juniper Ecosystem Guide](../../CLAUDE.md) for the full project map and dependency graph.

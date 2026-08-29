@@ -2,9 +2,9 @@
 
 ## juniper-cascor-client Technical Reference
 
-**Version:** 0.1.0
+**Version:** 0.1.2
 **Status:** Active
-**Last Updated:** March 3, 2026
+**Last Updated:** August 24, 2026
 **Project:** Juniper - CasCor Service Client Library
 
 ---
@@ -12,6 +12,7 @@
 ## Table of Contents
 
 - [REST Client API](#rest-client-api)
+- [Base URL normalisation](#base-url-normalisation-apd-cclient-005)
 - [WebSocket Clients](#websocket-clients)
 - [Exception Hierarchy](#exception-hierarchy)
 - [Testing Utilities](#testing-utilities)
@@ -38,10 +39,43 @@ from juniper_cascor_client import JuniperCascorClient
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `base_url` | `str` | `"http://localhost:8200"` | JuniperCascor service URL |
+| `base_url` | `str` | `"http://localhost:8200"` | Service origin. After APD-CCLIENT-005 ([#129](https://github.com/pcalnon/juniper-cascor-client/pull/129)) this is normalised — see [Base URL normalisation](#base-url-normalisation-apd-cclient-005). Do not include `/v1`. |
 | `timeout` | `int` | `30` | Request timeout in seconds |
 | `retries` | `int` | `3` | Retry attempts for transient failures |
 | `api_key` | `Optional[str]` | `None` | API key; falls back to `JUNIPER_CASCOR_API_KEY` env var |
+
+### Base URL normalisation (APD-CCLIENT-005)
+
+`JuniperCascorClient` builds every REST path as `api_url = f"{base_url}/v1"`. A schemeless host, a `/v1`-suffixed origin, or a hostless value used to construct silently and fail opaquely on the first request. [#129](https://github.com/pcalnon/juniper-cascor-client/pull/129) ports `_normalize_url` from the sibling clients (juniper-recurrence-client is the reference; the same host guard is `APD-DCLIENT-004` in juniper-data-client). Two hardenings beyond that port, both from a confirmed review finding on #129:
+
+- Scheme matching is **case-insensitive** (RFC 3986 §3.1). A case-sensitive `startswith` would re-prefix `HTTPS://host` into `http://HTTPS://host` — a silent TLS downgrade that sends `X-API-Key` over HTTP to hostname `https`.
+- The host guard reads `parsed.hostname`, not `netloc`. `netloc` is truthy for a userinfo-only authority (`http://user:secret@`) while `hostname` is `None`.
+
+`__init__` runs these steps in order:
+
+1. Strip surrounding whitespace.
+2. If the value does not **case-insensitively** start with `http://` or `https://` (`url.lower().startswith(URL_SCHEME_PREFIXES)`), prefix `http://` (`DEFAULT_URL_SCHEME_PREFIX`).
+3. Parse with `urllib.parse.urlparse`. An empty `hostname` raises `JuniperCascorConfigurationError` (`base_url must include a host; got ...`). The typed error subclasses `JuniperCascorClientError` and carries no HTTP `status_code` — there was no response.
+4. Rebuild as `f"{parsed.scheme}://{parsed.netloc}{parsed.path}"` (so `urlparse`'s lowercased scheme is what is stored) and drop a trailing slash.
+5. If the remaining URL ends with `/v1` (`API_VERSION_PATH`), strip that suffix so `api_url` is not `/v1/v1`.
+
+Pinned by `tests/test_client.py::TestClientInit`:
+
+| Input | Stored `base_url` | `api_url` |
+|-------|-------------------|-----------|
+| `"example.com:9000"` | `http://example.com:9000` | `http://example.com:9000/v1` |
+| `"http://example.com:9000/v1"` | `http://example.com:9000` | `http://example.com:9000/v1` |
+| `"  http://example.com:9000  "` | `http://example.com:9000` | `http://example.com:9000/v1` |
+| `"https://example.com:9000"` | `https://example.com:9000` (`https` kept) | `https://example.com:9000/v1` |
+| `"HTTPS://example.com:9000"` | `https://example.com:9000` (canonical; not `http://HTTPS://...`) | `https://example.com:9000/v1` |
+| `"Http://example.com:9000"` | `http://example.com:9000` | `http://example.com:9000/v1` |
+| `"http://example.com:9000/"` | `http://example.com:9000` | `http://example.com:9000/v1` |
+| `""`, `"   "`, `"http://"`, `"https://"`, `"/v1"`, `"http:///v1"`, `"http://user:secret@"` | raises `JuniperCascorConfigurationError` (also catchable as the base) | — |
+
+**Not covered by `_normalize_url` (deliberate):**
+
+- `CascorTrainingStream` and `CascorControlStream` still `rstrip("/")` only. The `ws://` scheme family needs its own defaulting rules; #129 records this as out of scope.
+- `FakeCascorClient` and `FakeCascorTrainingStream` still `rstrip("/")` only. A test that expects the hostless typed error or a repaired `/v1` `api_url` will pass against the real REST client after #129 and **not** against the fake. Do not pin this contract on the fake.
 
 ### Context Manager
 
@@ -135,7 +169,7 @@ from juniper_cascor_client import CascorTrainingStream
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `base_url` | `str` | `"ws://localhost:8200"` | WebSocket base URL |
+| `base_url` | `str` | `"ws://localhost:8200"` | WebSocket origin. Trailing slash stripped only — no HTTP-style scheme default, host check, or `/v1` strip (APD-CCLIENT-005 left the `ws://` family out of scope). |
 | `api_key` | `Optional[str]` | `None` | API key; falls back to `JUNIPER_CASCOR_API_KEY` env var |
 
 #### Connection Methods
@@ -189,7 +223,7 @@ from juniper_cascor_client import CascorControlStream
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `base_url` | `str` | `"ws://localhost:8200"` | WebSocket base URL |
+| `base_url` | `str` | `"ws://localhost:8200"` | WebSocket origin. Trailing slash stripped only — same out-of-scope note as `CascorTrainingStream`. |
 | `api_key` | `Optional[str]` | `None` | API key; falls back to `JUNIPER_CASCOR_API_KEY` env var |
 
 #### Methods
@@ -216,22 +250,28 @@ from juniper_cascor_client import CascorControlStream
 
 ```
 JuniperCascorClientError (base)
-├── JuniperCascorConnectionError      # Connection to service failed
-├── JuniperCascorTimeoutError         # Request timed out
-├── JuniperCascorNotFoundError        # 404 - Resource not found
-├── JuniperCascorConflictError        # 409 - State conflict
-├── JuniperCascorValidationError      # 400/422 - Invalid parameters
-└── JuniperCascorServiceUnavailableError  # 503 - Service unavailable
+├── JuniperCascorConnectionError           # Connection to service failed
+├── JuniperCascorTimeoutError              # Request timed out
+├── JuniperCascorNotFoundError             # 404 - Resource not found
+├── JuniperCascorConflictError             # 409 - State conflict
+├── JuniperCascorValidationError           # 400/422 - Invalid parameters
+├── JuniperCascorServiceUnavailableError   # 503 - Service unavailable
+├── JuniperCascorOverloadError             # Control-stream pending-command cap (256)
+└── JuniperCascorConfigurationError        # Invalid client config (hostless base_url); lands with #129
 ```
+
+`JuniperCascorOverloadError` is already on main (`CascorControlStream` raises it when pending commands exceed `MAX_PENDING_COMMANDS`). `JuniperCascorConfigurationError` is the APD-CCLIENT-005 sibling-alignment type; until [#129](https://github.com/pcalnon/juniper-cascor-client/pull/129) merges it is not importable.
 
 ### Import
 
 ```python
 from juniper_cascor_client import (
     JuniperCascorClientError,
+    JuniperCascorConfigurationError,  # after #129
     JuniperCascorConflictError,
     JuniperCascorConnectionError,
     JuniperCascorNotFoundError,
+    JuniperCascorOverloadError,
     JuniperCascorServiceUnavailableError,
     JuniperCascorTimeoutError,
     JuniperCascorValidationError,
@@ -250,6 +290,8 @@ from juniper_cascor_client import (
 | Connection failure | `JuniperCascorConnectionError` |
 | Timeout | `JuniperCascorTimeoutError` |
 | Other 4xx/5xx | `JuniperCascorClientError` |
+| Construction, hostless `base_url` (no HTTP) | `JuniperCascorConfigurationError` (after #129) |
+| Control WS pending-command cap (no HTTP) | `JuniperCascorOverloadError` |
 
 ---
 
@@ -274,7 +316,7 @@ with FakeCascorClient(scenario="two_spiral_training") as client:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `scenario` | `str` | `"idle"` | Scenario preset (see [Scenario Reference](#scenario-reference)) |
-| `base_url` | `str` | `"http://fake-cascor:8200"` | Fake base URL |
+| `base_url` | `str` | `"http://fake-cascor:8200"` | Fake origin. **rstrip-only** — no scheme default, host check, or `/v1` strip. Do not use the fake to pin APD-CCLIENT-005. |
 | `api_key` | `Optional[str]` | `None` | Unused; accepted for API compatibility |
 
 #### Test-Only Methods
@@ -307,7 +349,7 @@ async with FakeCascorTrainingStream(messages=messages) as stream:
 |-----------|------|---------|-------------|
 | `messages` | `Optional[List[Dict]]` | `None` | Pre-loaded messages to deliver |
 | `delay` | `float` | `0.1` | Delay in seconds between messages |
-| `base_url` | `str` | `"ws://fake-cascor:8200"` | Fake base URL |
+| `base_url` | `str` | `"ws://fake-cascor:8200"` | Fake origin. **rstrip-only**, matching the real WS constructors. |
 | `api_key` | `Optional[str]` | `None` | Unused; accepted for API compatibility |
 
 #### Test-Only Methods
@@ -716,7 +758,7 @@ complete ──reset──> idle
 - **Retried status codes:** 502, 504
 - **Backoff factor:** 0.5 (exponential)
 - **Connection pooling:** 10 max pool size
-- **API prefix:** All REST requests target `/v1/` endpoints
+- **API prefix:** All REST requests target `/v1/` endpoints. After #129, a caller-supplied trailing `/v1` is stripped from `base_url` first so this prefix is applied once.
 
 ### WebSocket Endpoints
 
@@ -779,6 +821,6 @@ isort --check-only juniper_cascor_client  # Import order
 
 ---
 
-**Last Updated:** March 3, 2026
-**Version:** 0.1.0
+**Last Updated:** August 24, 2026
+**Version:** 0.1.2
 **Maintainer:** Paul Calnon

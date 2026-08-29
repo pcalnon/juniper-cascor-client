@@ -33,7 +33,7 @@ REST:
 ```python
 from juniper_cascor_client import JuniperCascorClient
 
-with JuniperCascorClient("http://localhost:8200") as client:
+with JuniperCascorClient("http://localhost:8200") as client:  # origin only; not /v1
     client.create_network(input_size=2, output_size=2)
     client.start_training(
         dataset={"source": "inline"},
@@ -87,7 +87,7 @@ manager for long-running consumers.
 ## Documentation
 
 - [`docs/QUICK_START.md`](docs/QUICK_START.md) — installation and verification guide
-- [`docs/REFERENCE.md`](docs/REFERENCE.md) — full API reference, error model, and WebSocket frame catalogue
+- [`docs/REFERENCE.md`](docs/REFERENCE.md) — full API reference, error model, WebSocket frame catalogue, and `base_url` normalisation (APD-CCLIENT-005)
 - [`docs/DEVELOPER_CHEATSHEET.md`](docs/DEVELOPER_CHEATSHEET.md) — development quick-reference
 
 ## License
