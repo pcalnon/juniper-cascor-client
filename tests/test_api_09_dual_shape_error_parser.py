@@ -63,6 +63,7 @@ from juniper_cascor_client import (
     JuniperCascorServiceUnavailableError,
     JuniperCascorValidationError,
 )
+from juniper_cascor_client.client import _render_error_detail
 
 BASE_URL = "http://localhost:8200"
 API_URL = f"{BASE_URL}/v1"
@@ -442,3 +443,64 @@ class TestFakeClientMatchesRealExceptionContext:
             fake.create_network(input_size=2)
 
         assert excinfo.value.status_code == 422
+
+
+class TestRenderErrorDetailDegenerateShapes:
+    """``_render_error_detail`` must not crash or emit a Python repr on shapes
+    FastAPI (and proxies in front of it) actually produce besides the happy
+    ``[{loc, msg}, ...]`` list pinned by ``TestExceptionContext``.
+
+    These branches were uncovered on main (client.py:89-90, 97): a non-dict
+    item, a mapping with no usable ``loc``, and the empty-list fallback.
+    A refactor that assumed every element is a dict with ``loc`` would turn a
+    422 into an uncaught TypeError on the caller's request path.
+    """
+
+    def test_non_dict_items_are_stringified_not_crashed(self):
+        """A mixed list must keep going; the string item is not a mapping."""
+        detail = ["plain string error", {"loc": ["body", "input_size"], "msg": "Field required"}]
+        rendered = _render_error_detail(detail)
+        assert "plain string error" in rendered
+        assert "body.input_size: Field required" in rendered
+        assert "'type':" not in rendered
+
+    def test_dict_without_loc_uses_msg(self):
+        """``loc`` is optional on FastAPI error objects; missing/empty/wrong-type
+        all take the msg-only arm rather than raising."""
+        assert _render_error_detail([{"msg": "something went wrong"}]) == "something went wrong"
+        assert _render_error_detail([{"loc": [], "msg": "empty loc"}]) == "empty loc"
+        assert _render_error_detail([{"loc": "not-a-sequence", "msg": "bad loc"}]) == "bad loc"
+
+    def test_loc_tuple_is_joined_like_a_list(self):
+        """Starlette stores ``loc`` as a tuple internally; join must accept it."""
+        assert _render_error_detail([{"loc": ("body", "lr"), "msg": "too small"}]) == "body.lr: too small"
+
+    def test_loc_with_empty_msg_is_just_the_location(self):
+        """A present loc and blank msg must not collapse to an empty string."""
+        assert _render_error_detail([{"loc": ["body", "x"], "msg": ""}]) == "body.x"
+
+    def test_empty_list_stays_visible(self):
+        """An empty list is a legal payload; ``str`` keeps it visible rather
+        than collapsing to an empty exception message."""
+        assert _render_error_detail([]) == "[]"
+
+    @responses.activate
+    def test_malformed_422_list_still_raises_typed_error_with_detail_preserved(self, client):
+        """The consumer path: a mixed FastAPI-ish 422 must not crash inside
+        ``_handle_response``, must keep the list on ``exc.detail``, and must
+        render a readable message."""
+        # loc arrives as a JSON list (tuples do not survive the wire); mix in a
+        # non-dict item so the consumer path hits the same degenerate arm as
+        # the unit tests above.
+        detail = ["gateway timeout fragment", {"loc": ["query", "count"], "msg": "ensure this value is greater than 0"}]
+        responses.add(responses.GET, f"{API_URL}/network", json={"detail": detail}, status=422)
+
+        with pytest.raises(JuniperCascorValidationError) as excinfo:
+            client.get_network()
+
+        assert excinfo.value.status_code == 422
+        assert excinfo.value.detail == detail
+        message = str(excinfo.value)
+        assert "gateway timeout fragment" in message
+        assert "query.count: ensure this value is greater than 0" in message
+        assert "[{" not in message

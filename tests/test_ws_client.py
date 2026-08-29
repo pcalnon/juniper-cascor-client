@@ -206,6 +206,62 @@ class TestCascorTrainingStream:
             stream._dispatch({"type": msg_type, "data": {"test": True}})
             cb.assert_called_once_with({"test": True})
 
+    def test_dispatch_isolates_faulty_callback(self, caplog):
+        """APD-CCLIENT-006: a message callback that raises must not prevent
+        subsequent callbacks for the same message from running — the guard
+        ``_dispatch_disconnect`` always had, now on ``_dispatch`` too."""
+        import logging as _logging
+
+        stream = CascorTrainingStream()
+        good_cb = MagicMock()
+
+        def bad_cb(data):
+            raise RuntimeError("boom")
+
+        stream.on_metrics(bad_cb)
+        stream.on_metrics(good_cb)
+
+        caplog.set_level(_logging.ERROR, logger="juniper_cascor_client.ws_client")
+
+        stream._dispatch({"type": "metrics", "data": {"epoch": 3}})
+
+        good_cb.assert_called_once_with({"epoch": 3})
+        error_records = [r for r in caplog.records if r.levelno == _logging.ERROR]
+        assert any("metrics callback raised" in r.getMessage() for r in error_records), f"Expected ERROR log about callback fault; got: {[r.getMessage() for r in caplog.records]}"
+
+    @pytest.mark.asyncio
+    async def test_stream_survives_faulty_message_callback(self):
+        """APD-CCLIENT-006: ``_dispatch`` runs before ``stream()``'s yield, so an
+        unguarded listener fault tore down the whole training stream. A raising
+        listener must cost only its own callback: every message still reaches the
+        consumer, and later messages still reach the surviving listeners."""
+        import websockets as _websockets
+
+        async def async_iter_two_then_close():
+            yield json.dumps({"type": "metrics", "timestamp": 1.0, "data": {"epoch": 1}})
+            yield json.dumps({"type": "metrics", "timestamp": 2.0, "data": {"epoch": 2}})
+            raise _websockets.exceptions.ConnectionClosedOK(None, None)
+
+        mock_ws = AsyncMock()
+        mock_ws.__aiter__ = lambda self: async_iter_two_then_close()
+        stream = CascorTrainingStream()
+        stream._ws = mock_ws
+
+        good_seen = []
+
+        def bad_cb(data):
+            raise RuntimeError("boom")
+
+        stream.on_metrics(bad_cb)
+        stream.on_metrics(good_seen.append)
+
+        received = []
+        async for msg in stream.stream():
+            received.append(msg)
+
+        assert [m["data"]["epoch"] for m in received] == [1, 2]
+        assert [d["epoch"] for d in good_seen] == [1, 2]
+
     # ─── ERR-14: on_disconnect callbacks + WARNING log on drop ───────────
 
     @pytest.mark.asyncio

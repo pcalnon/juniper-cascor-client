@@ -5,7 +5,7 @@ JuniperCascor cascade correlation neural network training service.
 """
 
 from juniper_cascor_client.client import JuniperCascorClient
-from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorOverloadError, JuniperCascorServiceUnavailableError, JuniperCascorTimeoutError, JuniperCascorValidationError
+from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConfigurationError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorOverloadError, JuniperCascorServiceUnavailableError, JuniperCascorTimeoutError, JuniperCascorValidationError
 from juniper_cascor_client.ws_client import CascorControlStream, CascorTrainingStream
 
 # Kept in lockstep with [project].version in pyproject.toml (CL1 also fixed a
@@ -18,6 +18,7 @@ __all__ = [
     "CascorTrainingStream",
     "CascorControlStream",
     "JuniperCascorClientError",
+    "JuniperCascorConfigurationError",
     "JuniperCascorConflictError",
     "JuniperCascorConnectionError",
     "JuniperCascorNotFoundError",

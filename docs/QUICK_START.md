@@ -92,7 +92,7 @@ JuniperCascorClient("")                          # raises JuniperCascorConfigura
 JuniperCascorClient("http://user:secret@")       # also hostless — hostname is None even though netloc is truthy
 ```
 
-Until #129 merges, construction still only `rstrip("/")` — the schemeless form and a `/v1` suffix fail opaquely (or hit `/v1/v1`) on the first request, and `HTTPS://host` would be re-prefixed into `http://HTTPS://host`. `CascorTrainingStream` / `CascorControlStream` (`ws://...`) do not run this normalisation.
+`CascorTrainingStream` / `CascorControlStream` (`ws://...`) do not run this normalisation.
 
 ### Wait for Service
 
