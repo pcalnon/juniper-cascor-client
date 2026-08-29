@@ -4,6 +4,7 @@ Provides network lifecycle management, training control, metrics retrieval,
 and visualization data access for JuniperCascor consumers.
 """
 
+import logging
 import os
 import time
 from typing import Any, Dict, Optional
@@ -18,8 +19,10 @@ from juniper_cascor_client.constants import (
     API_KEY_HEADER_NAME,
     API_VERSION_PATH,
     DEFAULT_BACKOFF_FACTOR,
+    DEFAULT_BACKOFF_JITTER,
     DEFAULT_BASE_URL,
     DEFAULT_DECISION_BOUNDARY_RESOLUTION,
+    DEFAULT_POOL_CONNECTIONS,
     DEFAULT_POOL_MAXSIZE,
     DEFAULT_READY_POLL_INTERVAL,
     DEFAULT_READY_TIMEOUT,
@@ -60,6 +63,8 @@ from juniper_cascor_client.constants import (
     URL_SCHEME_PREFIXES,
 )
 from juniper_cascor_client.exceptions import JuniperCascorClientError, JuniperCascorConfigurationError, JuniperCascorConflictError, JuniperCascorConnectionError, JuniperCascorNotFoundError, JuniperCascorServiceUnavailableError, JuniperCascorTimeoutError, JuniperCascorValidationError
+
+logger = logging.getLogger("juniper_cascor_client.client")
 
 
 def _render_error_detail(detail: Any) -> str:
@@ -121,18 +126,26 @@ class JuniperCascorClient:
         base_url: str = DEFAULT_BASE_URL,
         timeout: int = DEFAULT_REQUEST_TIMEOUT,
         retries: int = DEFAULT_RETRY_COUNT,
+        # APD-CCLIENT-013: constructor-configurable like both siblings (and
+        # placed where they place it). An ecosystem census found no call
+        # passing more than one positional argument, so the insertion before
+        # ``api_key`` rebinds nothing.
+        backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
         api_key: Optional[str] = None,
     ) -> None:
         self.base_url = self._normalize_url(base_url)
         self.api_url = f"{self.base_url}{API_VERSION_PATH}"
         self.timeout = timeout
+        self.backoff_factor = backoff_factor
         self.api_key = api_key or os.environ.get(API_KEY_ENV_VAR)
 
         self.session = requests.Session()
 
         retry_strategy = Retry(
             total=retries,
-            backoff_factor=DEFAULT_BACKOFF_FACTOR,
+            backoff_factor=backoff_factor,
+            # APD-ECO-002: decorrelate retry schedules across client instances.
+            backoff_jitter=DEFAULT_BACKOFF_JITTER,
             status_forcelist=RETRYABLE_STATUS_CODES,
             allowed_methods=RETRY_ALLOWED_METHODS,
             # APD-CCLIENT-002: hand the exhausted response BACK instead of
@@ -158,7 +171,11 @@ class JuniperCascorClient:
             # urllib3 and are still caught as ConnectionError / Timeout.
             raise_on_status=False,
         )
-        adapter = HTTPAdapter(max_retries=retry_strategy, pool_maxsize=DEFAULT_POOL_MAXSIZE)
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=DEFAULT_POOL_CONNECTIONS,
+            pool_maxsize=DEFAULT_POOL_MAXSIZE,
+        )
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
 
@@ -233,13 +250,38 @@ class JuniperCascorClient:
 
     # ─── Network ─────────────────────────────────────────────────────────
 
-    def create_network(self, **kwargs: Any) -> Dict[str, Any]:
+    def create_network(
+        self,
+        *,
+        input_size: Optional[int] = None,
+        output_size: Optional[int] = None,
+        learning_rate: Optional[float] = None,
+        candidate_learning_rate: Optional[float] = None,
+        max_hidden_units: Optional[int] = None,
+        candidate_pool_size: Optional[int] = None,
+        correlation_threshold: Optional[float] = None,
+        patience: Optional[int] = None,
+        candidate_epochs: Optional[int] = None,
+        output_epochs: Optional[int] = None,
+        max_iterations: Optional[int] = None,
+        init_output_weights: Optional[str] = None,
+        optimizer_type: Optional[str] = None,
+        activation_function_name: Optional[str] = None,
+        **extra: Any,
+    ) -> Dict[str, Any]:
         """Create a new CasCor network.
 
+        Every parameter is optional and keyword-only, mirroring the server's
+        ``NetworkCreateRequest`` where **every field carries a server-side
+        default** (defect-register ``APD-CCLIENT-011``; the old docstring's
+        "(required)" claims were wrong — a bare ``create_network()`` creates a
+        default network). Only parameters the caller sets are sent, so the
+        server's defaults stay authoritative.
+
         Args:
-            input_size: Number of input features (required).
-            output_size: Number of output classes (required).
-            learning_rate: Output layer learning rate (required).
+            input_size: Number of input features.
+            output_size: Number of output classes.
+            learning_rate: Output layer learning rate.
             candidate_learning_rate: Candidate training learning rate.
             max_hidden_units: Maximum hidden units to add.
             candidate_pool_size: Number of candidate units per round.
@@ -247,9 +289,50 @@ class JuniperCascorClient:
             patience: Epochs without improvement before stopping.
             candidate_epochs: Max epochs per candidate training.
             output_epochs: Max epochs per output training.
-            epochs_max: Global max epochs.
+            max_iterations: Maximum cascade growth iterations.
+            init_output_weights: ``"zero"`` or ``"random"`` — typed ``str``,
+                not a Literal, so a newer server's additions stay callable
+                from an older client; the server 422s unsupported values.
+            optimizer_type: Output-layer optimizer name (server registry —
+                ``Adam``, ``AdamW``, ``SGD``, ...); same ``str``-not-Literal
+                rationale.
+            activation_function_name: Hidden-unit activation name (server
+                registry); same rationale.
+            **extra: Forward-compat channel for server fields this client
+                version does not yet name — forwarded verbatim, with a
+                WARNING log listing the keys, because the server's pydantic
+                model silently ignores unknown keys: a typo'd hyperparameter
+                would otherwise vanish without a trace (``epochs_max`` did
+                exactly this — it left the server's create surface, and
+                bodies still sending it are ignored; it is deliberately no
+                longer a named parameter here).
         """
-        return self._post(ENDPOINT_NETWORK, json=kwargs)
+        body: Dict[str, Any] = {}
+        for name, value in (
+            ("input_size", input_size),
+            ("output_size", output_size),
+            ("learning_rate", learning_rate),
+            ("candidate_learning_rate", candidate_learning_rate),
+            ("max_hidden_units", max_hidden_units),
+            ("candidate_pool_size", candidate_pool_size),
+            ("correlation_threshold", correlation_threshold),
+            ("patience", patience),
+            ("candidate_epochs", candidate_epochs),
+            ("output_epochs", output_epochs),
+            ("max_iterations", max_iterations),
+            ("init_output_weights", init_output_weights),
+            ("optimizer_type", optimizer_type),
+            ("activation_function_name", activation_function_name),
+        ):
+            if value is not None:
+                body[name] = value
+        if extra:
+            logger.warning(
+                "create_network: forwarding key(s) outside this client's typed surface: %s — the server silently ignores unknown fields, so a typo here vanishes without an error; only a field newer than this client version belongs in this channel",
+                sorted(extra),
+            )
+            body.update(extra)
+        return self._post(ENDPOINT_NETWORK, json=body)
 
     def get_network(self) -> Dict[str, Any]:
         """Get current network state and configuration."""

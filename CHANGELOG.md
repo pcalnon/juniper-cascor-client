@@ -7,7 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Retry backoff is jittered — `backoff_jitter` is passed to urllib3's `Retry`** (defect-register
+  `APD-ECO-002`). Without it, every client instance that tripped the same transient outage retried on
+  an *identical* schedule, so a service that was already failing took a synchronised herd on each
+  backoff step. urllib3 applies jitter as an **absolute additive term**
+  (`backoff_value += random.random() * backoff_jitter`), not a proportional one, so the new
+  `DEFAULT_BACKOFF_JITTER` is matched to `DEFAULT_BACKOFF_FACTOR` (0.5) — a full window of spread on
+  the first retry, the step that carries the most callers. **No dependency floor moves**:
+  `backoff_jitter` arrived in urllib3 2.0.0 and this package already pins `urllib3>=2.0.0`. Retry
+  counts, allowed methods and the status forcelist are untouched, so retry *behaviour* is unchanged —
+  only its timing is decorrelated. `tests/test_retry_policy.py` pins the constant's presence, its
+  positivity (a `0.0` would silently restore the herd while leaving the call site looking correct),
+  and — the decisive arm — that 200 sampled backoffs actually differ.
+
+- **`create_network` is fully typed — the server's 14 `NetworkCreateRequest` fields as keyword-only
+  `Optional` parameters, with `**extra` demoted to a loud forward-compat channel** (defect-register
+  `APD-CCLIENT-011`). The old `**kwargs: Any` surface typed none of its 11 documented parameters,
+  claimed three were "(required)" when the server defaults every field, still advertised
+  `epochs_max` after it left the server's create surface — and its blind pass-through fed the
+  server's silent-ignore behavior, where a typo'd hyperparameter vanishes without a trace (that is
+  exactly how retired `epochs_max` senders keep "working"). Now: only parameters the caller sets are
+  sent (server defaults stay authoritative); `init_output_weights` / `optimizer_type` /
+  `activation_function_name` are deliberately `str` rather than duplicated Literals so a newer
+  server's registry additions stay callable from an older client (the server 422s bad values);
+  unknown keys still forward via `**extra` — canopy's dict-splat adapter keeps working unchanged —
+  but now log a WARNING naming the keys. `FakeCascorClient.create_network` mirrors the signature
+  exactly (pinned by a parity test); its stricter-than-server validation posture (requiring
+  `input_size`/`output_size`/`learning_rate` that the real server defaults, and defaulting the
+  retired `epochs_max` into its config) is an **observed divergence deliberately left unchanged**
+  and recorded with the register close.
+
+- **`auto_pong` is keyword-only on all three WS stream constructors** — `CascorTrainingStream`,
+  `CascorControlStream`, and `FakeCascorTrainingStream` (defect-register `APD-CCLIENT-012`). A
+  trailing positional-or-keyword boolean made `CascorTrainingStream("ws://h", None, None, False)`
+  legal and unreadable, and any future parameter inserted before it would silently rebind the
+  boolean. **Breaking only for positional calls reaching that slot**: an ecosystem census found no
+  construction passing more than one positional argument and every `auto_pong` use already by
+  keyword. The fake mirrors the boundary so consumer tests fail exactly as production would; a
+  signature-pin test holds all three. The legacy `auto_pong=False` posture's missing removal date
+  — the row's other half — is the deprecation-machinery question tracked by open `APD-ECO-007`.
+
+### Added
+
+- **`backoff_factor` is constructor-configurable** (defect-register `APD-CCLIENT-013`). The retry
+  backoff was hardcoded to `DEFAULT_BACKOFF_FACTOR` at session build; both sibling clients expose
+  it as a constructor parameter. Inserted in the sibling position (before `api_key`) — an
+  ecosystem census found no call passing more than one positional argument, so nothing rebinds.
+
 ### Fixed
+
+- **The HTTP adapter now sets `pool_connections` alongside `pool_maxsize`** (defect-register
+  `APD-CCLIENT-009`). Both siblings set the pair explicitly (10/10); omitting one here left it on
+  urllib3's default — silent sibling drift rather than a decision. New `DEFAULT_POOL_CONNECTIONS`
+  constant; both knobs pinned by test.
+- **mypy targets 3.12, matching `requires-python >=3.12`** (defect-register `APD-CCLIENT-007`).
+  The strict gate was type-checking a Python this package refuses to install on. A new drift test
+  pins `[tool.mypy] python_version` to the `requires-python` floor so the two cannot drift apart
+  again.
+
+- **A raising message listener no longer tears down the training stream** (defect-register
+  `APD-CCLIENT-006`). `_dispatch` ran each registered callback bare while its neighbour
+  `_dispatch_disconnect` — same file, same author — wrapped each in try/except; and because
+  `_dispatch` runs inside `stream()` *before* the yield, one faulty `on_metrics`/`on_state`/…
+  listener killed the whole iterator (and `listen()`), skipped every later listener for that
+  message, and masked the fault as a stream failure. The guard is now ported: each callback is
+  isolated, the fault is logged at ERROR with the message type (`logger.exception`, matching the
+  disconnect path), subsequent listeners still run, and the message still reaches the stream's
+  consumer. Same-file inconsistency class — nothing structural catches these; recorded in the
+  register's §2.3 table.
 
 - **The base URL is now normalised and validated — a hostless `base_url` fails at construction with the new `JuniperCascorConfigurationError`** (defect-register `APD-CCLIENT-005`). This was the only Juniper client with *neither* scheme defaulting *nor* host validation: `base_url.rstrip("/")` was the entire treatment, so a schemeless host, a `/v1`-suffixed base (which then produced a broken double-`/v1` `api_url`), or an empty/hostless value all passed silently and failed opaquely on the first request. `_normalize_url` — ported from the sibling clients, juniper-recurrence-client being the reference — now strips whitespace, defaults the `http://` scheme, rejects an empty host with the typed error, drops a trailing slash and strips a trailing `/v1`. Two hardenings beyond the sibling port, both from a confirmed review finding on this PR: scheme matching is **case-insensitive** (RFC 3986 — a case-sensitive check would re-prefix `HTTPS://host` into `http://HTTPS://host`, a silent TLS downgrade sending the API key over HTTP to hostname `https`), and the guard reads `parsed.hostname` rather than `netloc` (netloc accepts a userinfo-only `http://user:secret@` as truthy; hostname is `None` for it). The siblings carry the same two flaws and are being fixed to match. The new `JuniperCascorConfigurationError` completes the sibling exception alignment (both other clients already carry one) and subclasses `JuniperCascorClientError`, so a consumer catching the base still catches it. The WS stream classes (`CascorTrainingStream` / `CascorControlStream`) keep their separate `rstrip`-only treatment — the `ws://` scheme family needs its own defaulting rules and is deliberately out of this change's scope.
 - **`JuniperCascorServiceUnavailableError` is reachable again — retry exhaustion now surfaces the typed error with its real status** (defect-register `APD-CCLIENT-002`). urllib3 defaults `raise_on_status` to `True`, so once the retries for a `status_forcelist` code ran out it raised `MaxRetryError`; requests surfaced that as `RetryError`, a plain `RequestException`, which `_request`'s generic handler flattened into `JuniperCascorClientError` **before** `_handle_response` could classify it. The 503 arm there — and therefore the `JuniperCascorServiceUnavailableError` type itself, which is publicly exported — was dead code in **every client built with retries**, i.e. every production client. Setting `raise_on_status=False` leaves the retrying itself completely unchanged and alters only the give-up path: the final response is returned rather than raised, so a 503 that outlives its retries now raises `JuniperCascorServiceUnavailableError` with `status_code=503`, and 429 / 502 / 504 carry their real status instead of `None`. Transport failures (refused connection, DNS, timeout) produce no response and are unaffected. **Non-breaking**: the typed error subclasses `JuniperCascorClientError`, so any consumer catching the base still catches it. Note for anyone auditing coverage: every pre-existing 503 test mounts `HTTPAdapter(max_retries=0)` first, which is why the dead branch went unnoticed — the coverage proved the branch worked under a configuration production never uses. The new arms use a retrying client.

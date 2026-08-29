@@ -87,7 +87,10 @@ line_length = 512
 known_first_party = ["juniper_cascor_client"]
 
 [tool.mypy]
-python_version = "3.11"
+# APD-CCLIENT-007: must match the requires-python floor above (>=3.12);
+# targeting 3.11 type-checked a Python this package refuses to install on.
+# Pinned by tests/test_tooling_python_floor.py.
+python_version = "3.12"
 warn_return_any = false
 warn_unused_configs = true
 ignore_missing_imports = false

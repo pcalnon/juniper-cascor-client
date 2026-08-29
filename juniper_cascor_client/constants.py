@@ -33,13 +33,52 @@ DEFAULT_URL_SCHEME_PREFIX: str = "http://"
 DEFAULT_REQUEST_TIMEOUT: int = 30
 DEFAULT_RETRY_COUNT: int = 3
 DEFAULT_BACKOFF_FACTOR: float = 0.5
+# APD-ECO-002: urllib3 applies this as an ABSOLUTE additive term --
+# ``backoff_value += random.random() * backoff_jitter`` -- not a proportional
+# one. Without it every client that trips the same transient outage retries on
+# an identical schedule, so a service that is already failing is hit by a
+# synchronised herd. Matched to DEFAULT_BACKOFF_FACTOR so the spread is a full
+# window on the first retry, which is the step that carries the most callers.
+DEFAULT_BACKOFF_JITTER: float = 0.5
 # XREPO-02 / CC-02 (2026-04-24): 503 is the canonical transient error
 # emitted by services during restart / deploy; 429 (Too Many Requests)
 # is also safe to retry when the server sets Retry-After. Both were
 # previously missing from the retry list, causing short outages to
 # bubble up as hard failures to callers.
 RETRYABLE_STATUS_CODES: List[int] = [429, 502, 503, 504]
-RETRY_ALLOWED_METHODS: List[str] = ["GET", "POST", "DELETE", "PUT", "PATCH"]
+# APD-CCLIENT-001 (2026-08-28): auto-retry is restricted to idempotent methods
+# per RFC 9110 §9.2.2. urllib3 replays inside the HTTP adapter, where the caller
+# never learns it happened, and there is no idempotency key anywhere in the
+# stack (APD-ECO-001), so a transient 502/503 on a mutation silently repeats it.
+# Both sibling clients already restricted theirs -- juniper-data-client to
+# ["HEAD","GET","PUT"], juniper-recurrence-client to ["HEAD","GET"] -- and this
+# was the last unrestricted client in the fleet.
+#
+# Per method, why it is out:
+#   POST   -- ``save_snapshot`` (POST /v1/snapshots) has no server-side guard, so
+#             a replay writes a DUPLICATE snapshot row. This is the one call site
+#             that genuinely duplicates today. The training lifecycle POSTs are
+#             only *accidentally* safe: cascor's FSM 409s a second start, and 409
+#             is not in RETRYABLE_STATUS_CODES, so the replay surfaces as a
+#             conflict rather than a second run. That is a property of the
+#             server's state machine, not an idempotency contract -- any new
+#             mutating endpoint without an FSM guard inherits the raw behaviour.
+#   PATCH  -- non-idempotent by RFC 9110; ``update_training_params`` applies a
+#             partial update whose replay is not guaranteed to be a no-op.
+#   DELETE -- RFC-idempotent in END STATE, but the only call site destroys a
+#             trained network. A replay landing after another actor recreated it
+#             deletes the new one, which is the classic DELETE-replay hazard and
+#             the reason juniper-data-client dropped it too.
+#   PUT    -- never issued by this client; dropped rather than carried as dead
+#             configuration that implies a capability the client does not have.
+#
+# HEAD is included for parity with both siblings: it is safe by RFC 9110 §9.2.1
+# and costs nothing if the client never issues one.
+RETRY_ALLOWED_METHODS: List[str] = ["HEAD", "GET"]
+# APD-CCLIENT-009: both sibling clients set pool_connections alongside
+# pool_maxsize (10/10); omitting it here left the adapter on urllib3's
+# default and encoded silent sibling drift rather than a decision.
+DEFAULT_POOL_CONNECTIONS: int = 10
 DEFAULT_POOL_MAXSIZE: int = 10
 
 # ─── Readiness Polling ───────────────────────────────────────────────────────

@@ -246,6 +246,10 @@ class CascorTrainingStream(_WsLivenessMixin):
         base_url: str = DEFAULT_WS_BASE_URL,
         api_key: Optional[str] = None,
         origin: Optional[str] = None,
+        # APD-CCLIENT-012: keyword-only — a trailing positional boolean invites
+        # unreadable call sites; every existing use already passes it by
+        # keyword (ecosystem census: max 1 positional arg on this class).
+        *,
         auto_pong: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -451,10 +455,23 @@ class CascorTrainingStream(_WsLivenessMixin):
         self._callbacks[message_type].append(callback)
 
     def _dispatch(self, message: Dict[str, Any]) -> None:
+        """Invoke the callbacks registered for the message's ``type``.
+
+        Each callback is wrapped in a try/except so a single misbehaving
+        listener cannot prevent subsequent listeners from running and cannot
+        tear down the stream iterator that dispatched it (APD-CCLIENT-006 —
+        the guard :meth:`_dispatch_disconnect` always had, ported here;
+        ``_dispatch`` runs before ``stream()``'s yield, so an unguarded
+        listener fault killed the whole training stream, not just its own
+        callback).
+        """
         msg_type = message.get("type", "")
         data = message.get("data", {})
         for callback in self._callbacks.get(msg_type, []):
-            callback(data)
+            try:
+                callback(data)
+            except Exception:  # noqa: BLE001 -- isolate listener faults
+                logger.exception("CascorTrainingStream: %s callback raised; continuing", msg_type)
 
     def _dispatch_disconnect(self, exc: websockets.exceptions.ConnectionClosed) -> None:
         """ERR-14: invoke registered ``on_disconnect`` callbacks with ``exc``.
@@ -504,6 +521,8 @@ class CascorControlStream(_WsLivenessMixin):
         api_key: Optional[str] = None,
         timeout: float = DEFAULT_CONTROL_STREAM_TIMEOUT,
         origin: Optional[str] = None,
+        # APD-CCLIENT-012: keyword-only, mirroring CascorTrainingStream.
+        *,
         auto_pong: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
