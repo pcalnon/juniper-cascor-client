@@ -164,7 +164,9 @@ repos:
           - --ignore-missing-imports
           - --no-strict-optional
           - --python-version=3.11
-        files: ^juniper_cascor_client/(?!testing/).*\.py$
+        # Widened to reach typing_probe/ -- the consumer-shaped probe that verifies the
+        # PUBLISHED type surface is usable from outside the package (APD-ECO-006).
+        files: ^(juniper_cascor_client/(?!testing/)|typing_probe/).*\.py$
         additional_dependencies:
           - types-requests
 
