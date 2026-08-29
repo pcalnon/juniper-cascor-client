@@ -28,6 +28,7 @@ from websockets.protocol import State
 
 from juniper_cascor_client import CascorControlStream, CascorTrainingStream
 from juniper_cascor_client.constants import DEFAULT_LIVENESS_WINDOW_SEC
+from juniper_cascor_client.exceptions import JuniperCascorClientError
 from juniper_cascor_client.testing import FakeCascorTrainingStream
 
 PING_FRAME = json.dumps({"type": "ping", "ts": 1234.5})
@@ -119,6 +120,30 @@ class TestTrainingStreamHeartbeat:
             assert stream.last_frame_at is not None
             assert stream.is_alive() is True
             await stream.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_pong_is_noop_when_socket_already_gone(self):
+        """Disconnect can clear ``_ws`` between ping receipt and pong send.
+        The best-effort pong must not raise (ws_client.py:169)."""
+        stream = CascorTrainingStream()
+        assert stream._ws is None
+        await stream._send_pong()
+        assert stream.pongs_sent == 0
+
+    @pytest.mark.asyncio
+    async def test_pong_send_failure_does_not_kill_training_stream(self):
+        """A tearing-down socket that raises on pong send must be swallowed so
+        the training iterator still yields subsequent frames (ws_client.py:173-174).
+        If this exception leaked, a half-closed heartbeat would abort metrics."""
+        mock_ws = _iterating_ws([PING_FRAME, METRICS_FRAME])
+        mock_ws.send = AsyncMock(side_effect=OSError("broken pipe"))
+        stream = CascorTrainingStream()
+        stream._ws = mock_ws
+
+        received = [msg async for msg in stream.stream()]
+
+        assert [m["type"] for m in received] == ["metrics"], "pong send failure must not abort the iterator"
+        assert stream.pongs_sent == 0
 
 
 @pytest.mark.unit
@@ -306,6 +331,35 @@ class TestControlStreamHeartbeat:
         sent = [json.loads(c.args[0]) for c in mock_ws.send.call_args_list]
         assert {"type": "pong"} in sent
         assert ctrl.pongs_sent == 1
+
+    @pytest.mark.asyncio
+    async def test_direct_command_path_skips_ping_without_pong_when_auto_pong_disabled(self):
+        """auto_pong=False on the uncorrelated command path still consumes the
+        ping (so it is never returned as the command's response) but must not
+        send a pong (ws_client.py:628)."""
+        mock_ws = AsyncMock()
+        mock_ws.state = State.OPEN
+        response = json.dumps({"type": "command_response", "data": {"command": "stop", "status": "success"}})
+        mock_ws.recv = AsyncMock(side_effect=[PING_FRAME, response])
+        ctrl = CascorControlStream(auto_pong=False)
+        ctrl._ws = mock_ws
+        assert ctrl._recv_task is None
+
+        result = await ctrl.command("stop")
+
+        assert result["type"] == "command_response"
+        sent = [json.loads(c.args[0]) for c in mock_ws.send.call_args_list]
+        assert {"type": "pong"} not in sent
+        assert ctrl.pongs_sent == 0
+
+    @pytest.mark.asyncio
+    async def test_recv_skipping_pings_raises_when_disconnected(self):
+        """A race that clears ``_ws`` mid-skip must fail fast as a typed
+        client error, not hang or AttributeError (ws_client.py:623)."""
+        ctrl = CascorControlStream()
+        ctrl._ws = None
+        with pytest.raises(JuniperCascorClientError, match="Not connected"):
+            await ctrl._recv_skipping_pings()
 
 
 @pytest.mark.unit
