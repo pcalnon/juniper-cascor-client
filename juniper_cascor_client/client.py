@@ -573,9 +573,25 @@ class JuniperCascorClient:
 
         try:
             body = response.json()
-            if isinstance(body.get("error"), dict):
-                error_msg = body.get("error", {}).get("message", response.text)
+            envelope = body.get("error")
+            if isinstance(envelope, dict):
+                # cascor's standard error envelope. A validation failure carries
+                # the per-field list on ``error.detail`` (cascor's API-09 422
+                # completion); prefer it, because that structure -- which field
+                # failed and why -- is the whole value of a 422, and
+                # ``error.message`` is only a flattened prose summary of it.
+                # Anything else (every ``HTTPException`` route) has
+                # ``detail: None`` and the prose IS the payload.
+                structured = envelope.get("detail")
+                error_msg = structured if isinstance(structured, list) else envelope.get("message", response.text)
             else:
+                # COMPATIBILITY SHIM, not a live shape (defect-register
+                # APD-CCLIENT-008). Before cascor completed API-09, Pydantic
+                # validation failures bypassed the envelope entirely and answered
+                # with a bare ``{"detail": [...]}``. A current cascor never takes
+                # this branch; it exists so this client keeps working against a
+                # pre-completion deployment. Retire it once the floor pin
+                # guarantees a cascor that wraps 422.
                 error_msg = body.get("detail", response.text)
         except (ValueError, KeyError):
             # ValueError covers requests.exceptions.JSONDecodeError; fall back
@@ -590,9 +606,14 @@ class JuniperCascorClient:
         # and were byte-identical. Those are one defect, not two: the branches
         # are indistinguishable *because* the type carried no status. Every
         # branch now passes the context, and ``error_msg`` is attached as
-        # ``detail`` UNMODIFIED -- FastAPI answers a 422 with a list of error
+        # ``detail`` UNMODIFIED -- a 422 carries a list of per-field error
         # objects, and stringifying it would leave the caller a Python repr to
         # re-parse. ``_render_error_detail`` handles the human-readable half.
+        #
+        # That list now arrives on ``error.detail`` inside cascor's envelope
+        # rather than at the top level; the extraction above prefers it, so what
+        # reaches ``exc.detail`` here is unchanged by cascor's API-09 422
+        # completion. That is the point of doing both sides together.
         rendered = _render_error_detail(error_msg)
 
         if status in (HTTP_400_BAD_REQUEST, HTTP_422_UNPROCESSABLE_ENTITY):

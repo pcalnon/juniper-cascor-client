@@ -15,7 +15,9 @@ Investigation while preparing this PR (juniper-cascor-client PR 2/3 of
 the migration) surfaced that the dual-shape parser was **already
 shipped** in ``client.py:_handle_response`` by Paul on 2026-02-21
 (commit b0a636a3), months before the API-09 design doc was written.
-The existing parser at lines 393-402 reads either shape correctly:
+The existing parser (then at lines 393-402; now ``_handle_response``, whose
+extraction block has since moved -- the defect register carried that same stale
+``client.py:393-402`` anchor for ``APD-CCLIENT-008``) reads either shape:
 
   * if ``body["error"]`` is a ``dict`` -> use ``body["error"]["message"]``
     (preferred — the envelope shape; future post-PR-3 cascor responses)
@@ -504,3 +506,108 @@ class TestRenderErrorDetailDegenerateShapes:
         assert "gateway timeout fragment" in message
         assert "query.count: ensure this value is greater than 0" in message
         assert "[{" not in message
+
+
+def _validation_envelope(message: str, errors: list) -> dict:
+    """cascor's 422 AFTER the API-09 completion (juniper-cascor#610).
+
+    The per-field list that used to sit at top-level ``detail`` now rides inside
+    the envelope on ``error.detail``; ``error.message`` is only a flattened
+    prose summary of the same content.
+    """
+    return {
+        "status": "error",
+        "error": {"code": "VALIDATION_ERROR", "message": message, "detail": errors},
+        "meta": {"timestamp": 1234567890.0, "version": "0.10.0"},
+    }
+
+
+class TestValidationEnvelopeStructuredDetail:
+    """cascor's completed 422 envelope (defect-register ``APD-CCLIENT-008``).
+
+    Before the completion cascor answered a Pydantic validation failure with a
+    bare ``{"detail": [...]}`` while every other error used the envelope -- the
+    drift this client's sniff existed to absorb. cascor now wraps it, and the
+    per-field list moved to ``error.detail``.
+
+    **The decisive property is that ``exc.detail`` still receives the LIST.** If
+    the parser took ``error.message`` here -- as it does for every other envelope
+    error -- the caller would get a flattened string and lose which field failed,
+    exactly the regression ``juniper-data`` warned about on ``APD-DATA-013``. So
+    these are not "the new shape parses" tests; they are "the structure survives
+    the shape change" tests.
+    """
+
+    @responses.activate
+    def test_structured_detail_is_preferred_over_the_prose_summary(self, client):
+        errors = [
+            {"type": "missing", "loc": ["body", "input_size"], "msg": "Field required"},
+            {"type": "int_parsing", "loc": ["body", "hidden_units"], "msg": "Input should be a valid integer"},
+        ]
+        responses.add(
+            responses.GET,
+            f"{API_URL}/network",
+            json=_validation_envelope("body.input_size: Field required", errors),
+            status=422,
+        )
+
+        with pytest.raises(JuniperCascorValidationError) as excinfo:
+            client.get_network()
+
+        assert excinfo.value.detail == errors
+        assert excinfo.value.status_code == 422
+
+    @responses.activate
+    def test_every_failing_field_survives(self, client):
+        """A flattened summary would collapse two failures into one line."""
+        errors = [
+            {"type": "missing", "loc": ["body", "a"], "msg": "Field required"},
+            {"type": "missing", "loc": ["body", "b"], "msg": "Field required"},
+        ]
+        responses.add(responses.GET, f"{API_URL}/network", json=_validation_envelope("summary", errors), status=422)
+
+        with pytest.raises(JuniperCascorValidationError) as excinfo:
+            client.get_network()
+
+        locs = {".".join(str(p) for p in entry["loc"]) for entry in excinfo.value.detail}
+        assert locs == {"body.a", "body.b"}
+
+    @responses.activate
+    def test_message_is_rendered_readably_not_as_a_repr(self, client):
+        errors = [{"type": "missing", "loc": ["body", "input_size"], "msg": "Field required"}]
+        responses.add(responses.GET, f"{API_URL}/network", json=_validation_envelope("summary", errors), status=422)
+
+        with pytest.raises(JuniperCascorValidationError) as excinfo:
+            client.get_network()
+
+        rendered = str(excinfo.value)
+        assert "body.input_size: Field required" in rendered
+        assert "[{" not in rendered, "the raw list repr must not reach the caller"
+
+    @responses.activate
+    def test_envelope_with_null_detail_still_uses_the_message(self, client):
+        """Regression guard for every ``HTTPException`` route: those carry no
+        per-field structure (``error.detail`` is ``None``), so the prose half
+        must remain the payload. Preferring ``detail`` unconditionally would
+        blank their messages."""
+        responses.add(responses.GET, f"{API_URL}/network", json=_envelope_only("HTTP_404", "No network loaded"), status=404)
+
+        with pytest.raises(JuniperCascorNotFoundError) as excinfo:
+            client.get_network()
+
+        assert "No network loaded" in str(excinfo.value)
+        assert excinfo.value.detail == "No network loaded"
+
+    @responses.activate
+    def test_non_list_envelope_detail_falls_back_to_message(self, client):
+        """A string ``error.detail`` is prose, not structure -- the message still
+        wins, so a server that fills ``detail`` with an explanation does not
+        silently replace the human-readable half."""
+        body = _envelope_only("HTTP_409", "conflict message")
+        body["error"]["detail"] = "some prose explanation"
+        responses.add(responses.GET, f"{API_URL}/network", json=body, status=409)
+
+        with pytest.raises(JuniperCascorConflictError) as excinfo:
+            client.get_network()
+
+        assert "conflict message" in str(excinfo.value)

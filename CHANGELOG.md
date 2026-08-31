@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Validation errors keep their per-field structure now that cascor wraps 422 in its envelope**
+  (defect-register `APD-CCLIENT-008`). `_handle_response` reads the structured list from
+  `error.detail` when the envelope carries one, so `exc.detail` still receives
+  `[{"type", "loc", "msg", ...}]` rather than a flattened prose summary.
+
+  **This is the client half of a coordinated change**; the server half is juniper-cascor#610.
+  cascor's API-09 migration declared itself complete while never registering a
+  `RequestValidationError` handler, so Pydantic field-validation 422s kept returning a bare
+  `{"detail": [...]}` while every other error returned the envelope. That drift is what this
+  client's two-envelope sniff existed to absorb -- the row was filed against the client, but the
+  defect was on the server. cascor now wraps 422, moving the list to `error.detail`.
+
+  Without this change a client talking to a fixed cascor would take the envelope branch, read
+  `error.message`, and silently lose which field failed -- the exact regression `juniper-data`
+  recorded on `APD-DATA-013`. Mutation-tested: reverting to `error.message` fails 3 arms.
+
+  The legacy top-level `detail` branch is **retained and now labelled a compatibility shim**, not a
+  live shape: a current cascor never takes it, and it exists so this client keeps working against a
+  pre-completion deployment. Two regression guards pin that preferring `detail` unconditionally would
+  be wrong -- `HTTPException` routes carry `error.detail: None`, and a string `error.detail` is prose
+  rather than structure; in both cases `error.message` must still win.
+
 ### Changed
 
 - **Retry backoff is jittered — `backoff_jitter` is passed to urllib3's `Retry`** (defect-register
