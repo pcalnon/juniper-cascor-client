@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.7.0
-**Last Updated**: 2026-08-30
+**Last Updated**: 2026-08-31
 
 ---
 
@@ -20,6 +20,17 @@ reference section in the same PR rather than waiving the budget gate.
   repository content — it is reaped when sessions, sandboxes or containers end, and the scripts are
   irrecoverable. Scratch *data* there is fine; source files are not. Permanent utilities live in
   `util/`, single-use ones in `util/ad-hoc/`. Full rule: § Script Placement.
+- **Never add a mutating method to `RETRY_ALLOWED_METHODS` — a replay is invisible to the caller
+  and there is no idempotency key anywhere in the stack.** It is `["HEAD", "GET"]`
+  (`constants.py:77`), wired into urllib3's `Retry` at `client.py:149-150`. urllib3 replays
+  **inside the HTTP adapter**, so the caller never learns it happened (APD-CCLIENT-001), and
+  nothing in the fleet issues an idempotency key (APD-ECO-001). Adding `POST` means a transient
+  502/503 on `save_snapshot` **silently writes a duplicate snapshot row**; adding `DELETE` means a
+  replay landing after another actor recreated a network **destroys the new one** — the classic
+  DELETE-replay hazard. The training-lifecycle POSTs are only *accidentally* safe: cascor's FSM
+  409s a second start and 409 is not in `RETRYABLE_STATUS_CODES`, which is a property of the
+  server's state machine, **not an idempotency contract** — so **any new mutating endpoint without
+  an FSM guard inherits the raw behaviour**. Both sibling clients are restricted the same way.
 
 ## Quick Reference
 
@@ -178,53 +189,11 @@ Every exported constant, its default, and the failure each one guards against. M
 
 ## Linting & Formatting
 
-All tools use the **Juniper ecosystem standard line length of 512**.
-
-| Tool | Config Location | Key Settings |
-|------|-----------------|--------------|
-| **black** | `pyproject.toml` | line-length=512, target py311/py312/py313 |
-| **isort** | `pyproject.toml` | profile=black, line-length=512 |
-| **flake8** | `.pre-commit-config.yaml` | max-line-length=512, max-complexity=15 (source) / 25 (tests) |
-| **mypy** | `pyproject.toml` | strict=true, python_version=3.11, ignore_missing_imports=false |
-| **bandit** | `.pre-commit-config.yaml` | Strict for source, relaxed for tests (allows assert, hardcoded values) |
-| **markdownlint** | `.markdownlint.yaml` | line-length=512, excludes CHANGELOG.md/notes/docs |
-| **shellcheck** | `.pre-commit-config.yaml` | severity=warning |
-| **yamllint** | `.pre-commit-config.yaml` | relaxed config |
-
----
+Per-tool config locations and key settings; the ecosystem 512-char line length. Moved to [`docs/REFERENCE.md` § Linting and Formatting Reference](docs/REFERENCE.md#linting-and-formatting-reference) — read it when working on this area.
 
 ## Test Organization
 
-### Structure
-
-- **Framework**: pytest with strict markers
-- **Coverage requirement**: 80% (branch coverage enabled)
-- **Timeout**: 30 seconds per test
-- **Markers**: `unit`, `integration`
-
-### Fixtures (conftest.py)
-
-| Fixture | Scenario | Description |
-|---------|----------|-------------|
-| `fake_idle` | `idle` | Ready for network creation |
-| `fake_training` | `two_spiral_training` | Active training with realistic metric curves |
-| `fake_converged` | `xor_converged` | Fully trained network |
-| `fake_empty` | `empty` | Minimal responses (negative testing) |
-| `fake_error` | `error_prone` | ~10% random error rate |
-
-### Test Files
-
-| File | Coverage |
-|------|----------|
-| `test_client.py` | REST client methods (mocked HTTP via `responses`) |
-| `test_client_update_params.py` | Runtime parameter update method |
-| `test_ws_client.py` | WebSocket client connect/stream/disconnect |
-| `test_fake_client.py` | FakeCascorClient all methods, scenarios, state machine |
-| `test_fake_client_update_params.py` | FakeCascorClient parameter updates |
-| `test_fake_client_workers.py` | FakeCascorClient worker endpoints |
-| `test_fake_ws_client.py` | FakeCascorTrainingStream message injection, callbacks |
-
----
+Pytest structure, the conftest fixture matrix, and what each test file covers. Moved to [`docs/REFERENCE.md` § Test Organization Reference](docs/REFERENCE.md#test-organization-reference) — read it when working on this area.
 
 ## CI/CD Pipeline
 
