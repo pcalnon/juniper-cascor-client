@@ -26,6 +26,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 from juniper_cascor_client.constants import DEFAULT_LIVENESS_WINDOW_SEC, WS_MSG_TYPE_COMMAND_OUT, WS_MSG_TYPE_PING
 from juniper_cascor_client.exceptions import JuniperCascorClientError
+from juniper_cascor_client.ws_client import warn_if_legacy_auto_pong
 
 
 class FakeCascorTrainingStream:
@@ -75,6 +76,14 @@ class FakeCascorTrainingStream:
         self._sent_commands: List[Dict[str, Any]] = []
         # CL1 parity: heartbeat auto-pong posture + liveness bookkeeping,
         # mirroring the real CascorTrainingStream surfaces.
+        #
+        # The fake warns too (APD-ECO-007). A consumer that migrates against the
+        # fake must see the same deprecation the real stream emits, or the fake
+        # would quietly certify a posture production is dating for removal --
+        # the #91 fake-parity lesson. stacklevel=3 here, not 4: this class sets
+        # ``_auto_pong`` directly rather than through ``_init_liveness``, so the
+        # chain is one frame shorter (warn <- __init__ <- user).
+        warn_if_legacy_auto_pong(auto_pong, stacklevel=3)
         self._auto_pong = auto_pong
         self._last_frame_monotonic: Optional[float] = None
         self._last_frame_wall: Optional[float] = None

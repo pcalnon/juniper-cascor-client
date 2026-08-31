@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
+- **`auto_pong=False` is deprecated and will be removed in 0.9.0** (defect-register
+  `APD-ECO-007`, which owns the removal-date half of `APD-CCLIENT-012`). Constructing any of
+  `CascorTrainingStream`, `CascorControlStream` or `FakeCascorTrainingStream` with the legacy
+  posture now emits a `DeprecationWarning` naming the removal version.
+
+  **Why dated rather than kept.** It shipped as a *silent* opt-out: no warning either way and no
+  removal stated. The source primer names the consequence — "the risk is that the flag never goes
+  away: nothing tells you who still sets it" — and contrasts it with the `juniper-data-client`
+  alias deprecation, which is "warned, dated, loud" and whose "dated window turns a deprecation
+  from a permanent tax into a plan". A fleet census answered the open question: **zero** production
+  users. Every occurrence across juniper-canopy / cascor / cascor-worker / data / recurrence / ml is
+  absent; all eleven in this repo are its own tests.
+
+  **The escape hatch is not being taken away silently.** `auto_pong=False` remains legitimate for a
+  relay that forwards pings, and the warning says so: if you need it, say so before 0.9.0 and the
+  posture can be kept deliberately. Removal version lives in
+  `constants.AUTO_PONG_REMOVAL_VERSION`.
+
+  **The fake warns too**, at its own `stacklevel` (3, versus production's 4, because it sets
+  `_auto_pong` directly rather than through `_init_liveness`). A consumer migrating against the fake
+  must see the same deprecation production emits — the #91 fake-parity lesson. Both levels are pinned
+  by tests asserting the warning is attributed to the *caller's* file; a mutation on either fails
+  exactly its own arm.
+
 ### Fixed
 
 - **Validation errors keep their per-field structure now that cascor wraps 422 in its envelope**

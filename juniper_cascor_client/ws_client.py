@@ -30,6 +30,7 @@ import logging
 import os
 import time
 import uuid
+import warnings
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
 import websockets
@@ -40,6 +41,7 @@ from websockets.protocol import State
 from juniper_cascor_client.constants import (
     API_KEY_ENV_VAR,
     API_KEY_HEADER_NAME,
+    AUTO_PONG_REMOVAL_VERSION,
     DEFAULT_CONTROL_STREAM_TIMEOUT,
     DEFAULT_LIVENESS_WINDOW_SEC,
     DEFAULT_SET_PARAMS_TIMEOUT,
@@ -117,6 +119,45 @@ def _validate_and_record(message: Dict[str, Any], endpoint: str) -> Dict[str, An
     return message
 
 
+def warn_if_legacy_auto_pong(auto_pong: bool, *, stacklevel: int) -> None:
+    """Emit the dated ``auto_pong=False`` deprecation, once, at construction.
+
+    Defect-register ``APD-ECO-007`` (which owns the removal-date half of
+    ``APD-CCLIENT-012``). ``auto_pong=False`` shipped as a *silent* opt-out: no
+    warning either way, and no removal stated. That is what makes it a permanent
+    tax rather than a plan -- and, as the source primer puts it, "nothing tells you
+    who still sets it".
+
+    A fleet census now answers that: **zero** production users. Every occurrence
+    outside this package's own tests is absent across canopy / cascor /
+    cascor-worker / data / recurrence / ml. So the posture is dated rather than
+    carried indefinitely.
+
+    ``stacklevel`` is explicit because the two call chains differ in depth and
+    getting it one frame off is the whole bug class -- the warning would be
+    attributed to library code instead of to the caller who passed the flag:
+
+    * production: this helper <- ``_init_liveness`` <- ``__init__`` <- user  => 4
+    * fake:       this helper <- ``__init__`` <- user                        => 3
+
+    Both are pinned by tests that assert the reported ``filename`` is the caller's,
+    which is the only reliable check.
+    """
+    if auto_pong:
+        return
+    warnings.warn(
+        "auto_pong=False is deprecated and will be removed in juniper-cascor-client "
+        f"{AUTO_PONG_REMOVAL_VERSION}. It restores the pre-CL1 posture where ping "
+        "frames are yielded to the consumer, which must then reply itself or be "
+        "closed by the server ~40s after connect. Drop the argument to keep the "
+        "default automatic pong handling; if you genuinely need to observe pings "
+        "(for example a relay forwarding them), say so before "
+        f"{AUTO_PONG_REMOVAL_VERSION} so the posture can be kept deliberately.",
+        DeprecationWarning,
+        stacklevel=stacklevel,
+    )
+
+
 class _WsLivenessMixin:
     """Connection-liveness bookkeeping shared by the two stream classes (CL1).
 
@@ -146,7 +187,12 @@ class _WsLivenessMixin:
     _auto_pong: bool
 
     def _init_liveness(self, auto_pong: bool) -> None:
-        """Initialize liveness state; call from ``__init__``."""
+        """Initialize liveness state; call from ``__init__``.
+
+        stacklevel=4 walks out to the caller who constructed the stream:
+        ``warn`` <- this method <- ``__init__`` <- user code.
+        """
+        warn_if_legacy_auto_pong(auto_pong, stacklevel=4)
         self._last_frame_monotonic = None
         self._last_frame_wall = None
         self._pongs_sent = 0
@@ -228,6 +274,18 @@ class CascorTrainingStream(_WsLivenessMixin):
     frames are yielded to the consumer, which must then reply itself
     (juniper-canopy's pre-CL1 relay did this) or be closed by the server
     ~40s after connect (30s ping interval + 10s pong window).
+
+    .. deprecated:: 0.8.0
+       ``auto_pong=False`` now emits a :class:`DeprecationWarning` and is removed
+       in ``juniper-cascor-client`` 0.9.0 (the authoritative value is
+       ``constants.AUTO_PONG_REMOVAL_VERSION``, which the warning text uses). It
+       shipped as a
+       *silent* opt-out with no removal stated, which made it a permanent
+       maintenance surface rather than a plan (defect-register ``APD-ECO-007``,
+       the removal-date half of ``APD-CCLIENT-012``). A fleet census found **zero**
+       production users. If you need to observe pings — a relay forwarding them is
+       the legitimate case — say so before the removal so the posture can be kept
+       deliberately.
 
     Example (async iteration):
         >>> async with CascorTrainingStream("ws://localhost:8200") as stream:

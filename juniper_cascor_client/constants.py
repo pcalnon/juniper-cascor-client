@@ -194,6 +194,24 @@ WS_MSG_TYPE_PONG: str = "pong"
 # window.
 DEFAULT_LIVENESS_WINDOW_SEC: float = 90.0
 
+# Release that removes the legacy ``auto_pong=False`` posture (defect-register
+# ``APD-ECO-007``, which owns the removal-date half of ``APD-CCLIENT-012``).
+#
+# ``auto_pong=False`` restores the pre-CL1 behaviour where ping frames are yielded
+# to the consumer, which must then reply itself or be closed by the server ~40s
+# after connect -- the 2026-07-10 incident. It shipped as a silent opt-out with no
+# warning and **no stated removal**, which is the defect: a compatibility flag that
+# nothing dates is a permanent tax rather than a plan, and nothing tells you who
+# still sets it.
+#
+# A fleet census answers that: ``auto_pong=False`` has **zero** production users --
+# every occurrence across juniper-canopy / cascor / cascor-worker / data /
+# recurrence / ml is absent, and all eleven inside this repo are its own tests. So
+# the posture is dated rather than kept indefinitely. One release cycle, matching
+# the ``juniper-data-client`` alias precedent ("Remove in the release after v0.5"):
+# deprecated in 0.8.0, removed here.
+AUTO_PONG_REMOVAL_VERSION: str = "0.9.0"
+
 # ─── WebSocket set_params Defaults ──────────────────────────────────────────
 
 DEFAULT_SET_PARAMS_TIMEOUT: float = 1.0  # D-01: fail fast to REST fallback
