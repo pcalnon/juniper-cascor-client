@@ -57,10 +57,14 @@ CONSTRUCTORS = [
     pytest.param(lambda: FakeCascorTrainingStream(auto_pong=False), id="fake"),
 ]
 
+# The classes themselves, not ``lambda: Cls()`` wrappers around them: with no
+# arguments to bind, the lambda adds a frame and nothing else (CodeQL
+# "Unnecessary lambda", raised on this file and correct). The ``CONSTRUCTORS``
+# list above legitimately keeps its lambdas -- those bind ``auto_pong=False``.
 DEFAULT_CONSTRUCTORS = [
-    pytest.param(lambda: CascorTrainingStream(), id="training"),
-    pytest.param(lambda: CascorControlStream(), id="control"),
-    pytest.param(lambda: FakeCascorTrainingStream(), id="fake"),
+    pytest.param(CascorTrainingStream, id="training"),
+    pytest.param(CascorControlStream, id="control"),
+    pytest.param(FakeCascorTrainingStream, id="fake"),
 ]
 
 
