@@ -360,6 +360,43 @@ async with FakeCascorTrainingStream(messages=messages) as stream:
 
 ---
 
+## Test Organization Reference
+
+Relocated verbatim from `AGENTS.md` (P3 of the shared-session-memory plan) so it is read on demand rather than loaded into every session.
+
+### Structure
+
+- **Framework**: pytest with strict markers
+- **Coverage requirement**: 80% (branch coverage enabled)
+- **Timeout**: 30 seconds per test
+- **Markers**: `unit`, `integration`
+
+### Fixtures (conftest.py)
+
+| Fixture | Scenario | Description |
+|---------|----------|-------------|
+| `fake_idle` | `idle` | Ready for network creation |
+| `fake_training` | `two_spiral_training` | Active training with realistic metric curves |
+| `fake_converged` | `xor_converged` | Fully trained network |
+| `fake_empty` | `empty` | Minimal responses (negative testing) |
+| `fake_error` | `error_prone` | ~10% random error rate |
+
+### Test Files
+
+| File | Coverage |
+|------|----------|
+| `test_client.py` | REST client methods (mocked HTTP via `responses`) |
+| `test_client_update_params.py` | Runtime parameter update method |
+| `test_ws_client.py` | WebSocket client connect/stream/disconnect |
+| `test_fake_client.py` | FakeCascorClient all methods, scenarios, state machine |
+| `test_fake_client_update_params.py` | FakeCascorClient parameter updates |
+| `test_fake_client_workers.py` | FakeCascorClient worker endpoints |
+| `test_fake_ws_client.py` | FakeCascorTrainingStream message injection, callbacks |
+
+---
+
+---
+
 ## Architecture Reference
 
 Relocated verbatim from `AGENTS.md` (P3 of the shared-session-memory plan) so it is read on demand rather than loaded into every session.
@@ -583,6 +620,27 @@ juniper-cascor-client/
 ├── .markdownlint.yaml               # Markdown linting rules
 └── .gitignore
 ```
+
+---
+
+---
+
+## Linting and Formatting Reference
+
+Relocated verbatim from `AGENTS.md` (P3 of the shared-session-memory plan) so it is read on demand rather than loaded into every session.
+
+All tools use the **Juniper ecosystem standard line length of 512**.
+
+| Tool | Config Location | Key Settings |
+|------|-----------------|--------------|
+| **black** | `pyproject.toml` | line-length=512, target py311/py312/py313 |
+| **isort** | `pyproject.toml` | profile=black, line-length=512 |
+| **flake8** | `.pre-commit-config.yaml` | max-line-length=512, max-complexity=15 (source) / 25 (tests) |
+| **mypy** | `pyproject.toml` | strict=true, python_version=3.11, ignore_missing_imports=false |
+| **bandit** | `.pre-commit-config.yaml` | Strict for source, relaxed for tests (allows assert, hardcoded values) |
+| **markdownlint** | `.markdownlint.yaml` | line-length=512, excludes CHANGELOG.md/notes/docs |
+| **shellcheck** | `.pre-commit-config.yaml` | severity=warning |
+| **yamllint** | `.pre-commit-config.yaml` | relaxed config |
 
 ---
 
