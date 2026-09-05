@@ -11,7 +11,7 @@ from juniper_cascor_client.ws_client import CascorControlStream, CascorTrainingS
 # Kept in lockstep with [project].version in pyproject.toml (CL1 also fixed a
 # pre-existing drift where this constant had been left at 0.4.0 while the
 # package shipped 0.5.x/0.6.x).
-__version__ = "0.7.1"
+__version__ = "0.8.0"
 
 __all__ = [
     "JuniperCascorClient",

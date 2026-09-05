@@ -1,8 +1,8 @@
-# Juniper Cascor Client v0.7.1 Release Notes
+# Juniper Cascor Client v0.8.0 Release Notes
 
 **Release Date:** DRAFT — owner cuts the GitHub Release
-**Version:** 0.7.1
-**Release Type:** PATCH (see *Versioning note* — this is arguably a MINOR)
+**Version:** 0.8.0
+**Release Type:** MINOR
 
 ---
 
@@ -14,16 +14,18 @@ PyPI's `juniper-cascor-client` 0.7.0 retries on `["GET", "POST", "DELETE", "PUT"
 
 That is constraint **C8** of the X7 remediation design (juniper-ml `notes/JUNIPER_2026-09-03_JUNIPER-CANOPY_X7-EVENT-LOOP-BLOCKING-REMEDIATION-DESIGN.md`): *"Retries must not be applied to non-idempotent verbs"*, measured as **`POST /v1/training/start` reaching the server 4×**. A retried training-start is not a slow request; it is up to four training runs.
 
-> **Status:** DRAFT — do not tag or publish from this document. The owner cuts the GitHub Release per the ecosystem release convention (juniper-ml `notes/JUNIPER_2026-06-18_JUNIPER-ECOSYSTEM_PYPI-PUBLISH-PROCEDURE.md` §11), which fires `publish.yml`. **Pinning canopy's floor to `>=0.7.1` must wait until this is on PyPI**, or canopy's install resolves nothing.
+> **Status:** DRAFT — do not tag or publish from this document. The owner cuts the GitHub Release per the ecosystem release convention (juniper-ml `notes/JUNIPER_2026-06-18_JUNIPER-ECOSYSTEM_PYPI-PUBLISH-PROCEDURE.md` §11), which fires `publish.yml`.
+>
+> **Two things gate cutting it, in order.** Canopy capped this dependency at `<0.8.0`, which would exclude this artefact from the one consumer the release exists to serve, so **widening that cap must land first** (juniper-canopy `pyproject.toml`, a single line). Only after the wheel is on PyPI can canopy's floor move to `>=0.8.0` — pinning a floor at a version that is not published resolves nothing.
 
 ---
 
 ## Release Summary
 
-- **Release type:** PATCH (with a caveat — see below)
+- **Release type:** MINOR. `backoff_factor` became a public constructor parameter (`APD-CCLIENT-013`); an additive public-API change is a feature, and a feature is a minor bump.
 - **Primary focus:** publish the C8 retry-idempotency fix that has been unreleased since `ff3df6c`
 - **Breaking changes:** none for correct callers. A caller *relying* on `POST` being retried loses that, which is the point of the fix.
-- **Downstream:** canopy floor bump to `>=0.7.1` follows publication; it fits canopy's existing `<0.8.0` cap.
+- **Downstream:** canopy's cap is widened from `<0.8.0` to `<0.9.0` **before** the Release is cut; its floor moves to `>=0.8.0` **after** the wheel is on PyPI.
 
 ## What is in it
 
@@ -37,15 +39,7 @@ Everything that accumulated in `[Unreleased]` since 0.7.0. The load-bearing entr
 | `pool_connections` set alongside `pool_maxsize` | `APD-CCLIENT-009` | Omitting one left it on the library default while the other was tuned. |
 | `auto_pong=False` deprecated, removal dated 0.9.0 | `APD-ECO-007` | It shipped as a *silent* opt-out: no warning, no removal date. Fleet census found **zero** production users. |
 
-Full detail: `CHANGELOG.md` `[0.7.1]`.
-
-## Versioning note — read before cutting
-
-**This is labelled PATCH but contains an additive public-API change**: `backoff_factor` became a constructor parameter (`APD-CCLIENT-013`). Under strict SemVer that is a MINOR feature, and 0.8.0 would be the more honest number.
-
-It is 0.7.1 because the X7 design chose that explicitly, and the reason is downstream: **canopy caps this dependency at `<0.8.0`**, so a 0.8.0 release would be excluded by the very consumer the release exists to serve. Bumping to 0.8.0 instead is a two-part change — the release *and* widening canopy's cap — and that is a deliberate decision rather than a side effect of this one.
-
-Flagged rather than left silent: a consumer pinning `~=0.7.0` will receive a new constructor parameter in a patch. Nothing breaks, but it is not what a patch usually means.
+Full detail: `CHANGELOG.md` `[0.8.0]`.
 
 ## Verification
 
@@ -62,6 +56,6 @@ Flagged rather than left silent: a consumer pinning `~=0.7.0` will receive a new
 
 ## After publication
 
-1. Verify the version resolves on PyPI (the CDN can lag ~5–30 s; query the version-specific endpoint).
-2. Pin canopy's floor: `juniper-cascor-client>=0.7.1,<0.8.0`.
+1. Verify the version resolves on PyPI (the CDN can lag ~5–30 s; query the version-specific endpoint, not the index).
+2. Pin canopy's floor: `juniper-cascor-client>=0.8.0,<0.9.0`. The cap half of that line is already widened; only the floor waits on publication.
 3. Re-run canopy's suite against the published wheel rather than the local checkout.
