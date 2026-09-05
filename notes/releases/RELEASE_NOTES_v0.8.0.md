@@ -1,6 +1,6 @@
 # Juniper Cascor Client v0.8.0 Release Notes
 
-**Release Date:** DRAFT — owner cuts the GitHub Release
+**Release Date:** 2026-09-05
 **Version:** 0.8.0
 **Release Type:** MINOR
 
@@ -14,9 +14,7 @@ PyPI's `juniper-cascor-client` 0.7.0 retries on `["GET", "POST", "DELETE", "PUT"
 
 That is constraint **C8** of the X7 remediation design (juniper-ml `notes/JUNIPER_2026-09-03_JUNIPER-CANOPY_X7-EVENT-LOOP-BLOCKING-REMEDIATION-DESIGN.md`): *"Retries must not be applied to non-idempotent verbs"*, measured as **`POST /v1/training/start` reaching the server 4×**. A retried training-start is not a slow request; it is up to four training runs.
 
-> **Status:** DRAFT — do not tag or publish from this document. The owner cuts the GitHub Release per the ecosystem release convention (juniper-ml `notes/JUNIPER_2026-06-18_JUNIPER-ECOSYSTEM_PYPI-PUBLISH-PROCEDURE.md` §11), which fires `publish.yml`.
->
-> **Two things gate cutting it, in order.** Canopy capped this dependency at `<0.8.0`, which would exclude this artefact from the one consumer the release exists to serve, so **widening that cap must land first** (juniper-canopy `pyproject.toml`, a single line). Only after the wheel is on PyPI can canopy's floor move to `>=0.8.0` — pinning a floor at a version that is not published resolves nothing.
+> **Prerequisite satisfied before this Release was cut.** juniper-canopy capped this dependency at `<0.8.0`, which would have excluded this artefact from the one consumer the release exists to serve. That cap was widened to `<0.9.0` first (juniper-canopy#584, `pyproject.toml`), so 0.8.0 is admissible. Canopy's **floor** stays at `>=0.7.0` until this wheel is live on PyPI — a floor pinned at an unpublished version resolves nothing.
 
 ---
 
@@ -25,7 +23,7 @@ That is constraint **C8** of the X7 remediation design (juniper-ml `notes/JUNIPE
 - **Release type:** MINOR. `backoff_factor` became a public constructor parameter (`APD-CCLIENT-013`); an additive public-API change is a feature, and a feature is a minor bump.
 - **Primary focus:** publish the C8 retry-idempotency fix that has been unreleased since `ff3df6c`
 - **Breaking changes:** none for correct callers. A caller *relying* on `POST` being retried loses that, which is the point of the fix.
-- **Downstream:** canopy's cap is widened from `<0.8.0` to `<0.9.0` **before** the Release is cut; its floor moves to `>=0.8.0` **after** the wheel is on PyPI.
+- **Downstream:** canopy's cap was widened from `<0.8.0` to `<0.9.0` before this Release; its floor moves to `>=0.8.0` after the wheel is on PyPI.
 
 ## What is in it
 
@@ -41,10 +39,15 @@ Everything that accumulated in `[Unreleased]` since 0.7.0. The load-bearing entr
 
 Full detail: `CHANGELOG.md` `[0.8.0]`.
 
+## Why 0.8.0 and not 0.7.1
+
+The release was first numbered 0.7.1 (#154). SemVer governs: `backoff_factor` is a **new public constructor parameter**, an additive public-API change, and that is a feature — a MINOR bump. 0.7.1 had been chosen for a downstream reason rather than a semantic one (canopy's `<0.8.0` cap), which would have meant a consumer pinning `~=0.7.0` silently receiving a new constructor parameter in a patch. The cap was the thing to change; #155 corrected the number.
+
 ## Verification
 
-- Full test suite green on the release commit.
-- Version consistent across `pyproject.toml`, `juniper_cascor_client/__init__.py` and `juniper_cascor_client/constants.py`.
+- Full test suite green on the release commit: **515 passed, 7 subtests passed, 0 failures**.
+- Version consistent across `pyproject.toml`, `juniper_cascor_client/__init__.py`, `juniper_cascor_client/constants.py`, `AGENTS.md` and `CHANGELOG.md`.
+- `Post-Merge Main Verification` green on the release commit (`6ffd567`).
 - The published-vs-`main` divergence that motivated this release:
 
   ```
