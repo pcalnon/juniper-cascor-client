@@ -11,7 +11,7 @@ Project: Juniper
 Sub-Project: juniper-cascor-client
 Application: JuniperCascorClient
 Author: Paul Calnon
-Version: 0.7.0
+Version: 0.7.1
 License: MIT License
 """
 
