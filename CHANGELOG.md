@@ -9,6 +9,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0] - 2026-09-05
 
+### Added
+
+- **`backoff_factor` is constructor-configurable** (defect-register `APD-CCLIENT-013`). The retry
+  backoff was hardcoded to `DEFAULT_BACKOFF_FACTOR` at session build; both sibling clients expose
+  it as a constructor parameter. Inserted in the sibling position (before `api_key`) — an
+  ecosystem census found no call passing more than one positional argument, so nothing rebinds.
+
+### Changed
+
+- **Retry backoff is jittered — `backoff_jitter` is passed to urllib3's `Retry`** (defect-register
+  `APD-ECO-002`). Without it, every client instance that tripped the same transient outage retried on
+  an *identical* schedule, so a service that was already failing took a synchronised herd on each
+  backoff step. urllib3 applies jitter as an **absolute additive term**
+  (`backoff_value += random.random() * backoff_jitter`), not a proportional one, so the new
+  `DEFAULT_BACKOFF_JITTER` is matched to `DEFAULT_BACKOFF_FACTOR` (0.5) — a full window of spread on
+  the first retry, the step that carries the most callers. **No dependency floor moves**:
+  `backoff_jitter` arrived in urllib3 2.0.0 and this package already pins `urllib3>=2.0.0`. Retry
+  counts, allowed methods and the status forcelist are untouched, so retry *behaviour* is unchanged —
+  only its timing is decorrelated. `tests/test_retry_policy.py` pins the constant's presence, its
+  positivity (a `0.0` would silently restore the herd while leaving the call site looking correct),
+  and — the decisive arm — that 200 sampled backoffs actually differ.
+
+- **`create_network` is fully typed — the server's 14 `NetworkCreateRequest` fields as keyword-only
+  `Optional` parameters, with `**extra` demoted to a loud forward-compat channel** (defect-register
+  `APD-CCLIENT-011`). The old `**kwargs: Any` surface typed none of its 11 documented parameters,
+  claimed three were "(required)" when the server defaults every field, still advertised
+  `epochs_max` after it left the server's create surface — and its blind pass-through fed the
+  server's silent-ignore behavior, where a typo'd hyperparameter vanishes without a trace (that is
+  exactly how retired `epochs_max` senders keep "working"). Now: only parameters the caller sets are
+  sent (server defaults stay authoritative); `init_output_weights` / `optimizer_type` /
+  `activation_function_name` are deliberately `str` rather than duplicated Literals so a newer
+  server's registry additions stay callable from an older client (the server 422s bad values);
+  unknown keys still forward via `**extra` — canopy's dict-splat adapter keeps working unchanged —
+  but now log a WARNING naming the keys. `FakeCascorClient.create_network` mirrors the signature
+  exactly (pinned by a parity test); its stricter-than-server validation posture (requiring
+  `input_size`/`output_size`/`learning_rate` that the real server defaults, and defaulting the
+  retired `epochs_max` into its config) is an **observed divergence deliberately left unchanged**
+  and recorded with the register close.
+
+- **`auto_pong` is keyword-only on all three WS stream constructors** — `CascorTrainingStream`,
+  `CascorControlStream`, and `FakeCascorTrainingStream` (defect-register `APD-CCLIENT-012`). A
+  trailing positional-or-keyword boolean made `CascorTrainingStream("ws://h", None, None, False)`
+  legal and unreadable, and any future parameter inserted before it would silently rebind the
+  boolean. **Breaking only for positional calls reaching that slot**: an ecosystem census found no
+  construction passing more than one positional argument and every `auto_pong` use already by
+  keyword. The fake mirrors the boundary so consumer tests fail exactly as production would; a
+  signature-pin test holds all three. The legacy `auto_pong=False` posture's missing removal date
+  — the row's other half — is the deprecation-machinery question tracked by open `APD-ECO-007`.
+
+
+- **Removed the redundant `pass` statements from the exception subclasses** (defect-register `APD-CCLIENT-010`). The register filed eight; `APD-CCLIENT-004`'s fix had already given the base class a real body, so **seven** remained. A docstring is a complete class body; the `pass` lines were dead weight. No behavioural change; the whole suite passes untouched.
+
 ### Deprecated
 
 - **`auto_pong=False` is deprecated and will be removed in 0.9.0** (defect-register
@@ -59,56 +111,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   be wrong -- `HTTPException` routes carry `error.detail: None`, and a string `error.detail` is prose
   rather than structure; in both cases `error.message` must still win.
 
-### Changed
-
-- **Retry backoff is jittered — `backoff_jitter` is passed to urllib3's `Retry`** (defect-register
-  `APD-ECO-002`). Without it, every client instance that tripped the same transient outage retried on
-  an *identical* schedule, so a service that was already failing took a synchronised herd on each
-  backoff step. urllib3 applies jitter as an **absolute additive term**
-  (`backoff_value += random.random() * backoff_jitter`), not a proportional one, so the new
-  `DEFAULT_BACKOFF_JITTER` is matched to `DEFAULT_BACKOFF_FACTOR` (0.5) — a full window of spread on
-  the first retry, the step that carries the most callers. **No dependency floor moves**:
-  `backoff_jitter` arrived in urllib3 2.0.0 and this package already pins `urllib3>=2.0.0`. Retry
-  counts, allowed methods and the status forcelist are untouched, so retry *behaviour* is unchanged —
-  only its timing is decorrelated. `tests/test_retry_policy.py` pins the constant's presence, its
-  positivity (a `0.0` would silently restore the herd while leaving the call site looking correct),
-  and — the decisive arm — that 200 sampled backoffs actually differ.
-
-- **`create_network` is fully typed — the server's 14 `NetworkCreateRequest` fields as keyword-only
-  `Optional` parameters, with `**extra` demoted to a loud forward-compat channel** (defect-register
-  `APD-CCLIENT-011`). The old `**kwargs: Any` surface typed none of its 11 documented parameters,
-  claimed three were "(required)" when the server defaults every field, still advertised
-  `epochs_max` after it left the server's create surface — and its blind pass-through fed the
-  server's silent-ignore behavior, where a typo'd hyperparameter vanishes without a trace (that is
-  exactly how retired `epochs_max` senders keep "working"). Now: only parameters the caller sets are
-  sent (server defaults stay authoritative); `init_output_weights` / `optimizer_type` /
-  `activation_function_name` are deliberately `str` rather than duplicated Literals so a newer
-  server's registry additions stay callable from an older client (the server 422s bad values);
-  unknown keys still forward via `**extra` — canopy's dict-splat adapter keeps working unchanged —
-  but now log a WARNING naming the keys. `FakeCascorClient.create_network` mirrors the signature
-  exactly (pinned by a parity test); its stricter-than-server validation posture (requiring
-  `input_size`/`output_size`/`learning_rate` that the real server defaults, and defaulting the
-  retired `epochs_max` into its config) is an **observed divergence deliberately left unchanged**
-  and recorded with the register close.
-
-- **`auto_pong` is keyword-only on all three WS stream constructors** — `CascorTrainingStream`,
-  `CascorControlStream`, and `FakeCascorTrainingStream` (defect-register `APD-CCLIENT-012`). A
-  trailing positional-or-keyword boolean made `CascorTrainingStream("ws://h", None, None, False)`
-  legal and unreadable, and any future parameter inserted before it would silently rebind the
-  boolean. **Breaking only for positional calls reaching that slot**: an ecosystem census found no
-  construction passing more than one positional argument and every `auto_pong` use already by
-  keyword. The fake mirrors the boundary so consumer tests fail exactly as production would; a
-  signature-pin test holds all three. The legacy `auto_pong=False` posture's missing removal date
-  — the row's other half — is the deprecation-machinery question tracked by open `APD-ECO-007`.
-
-### Added
-
-- **`backoff_factor` is constructor-configurable** (defect-register `APD-CCLIENT-013`). The retry
-  backoff was hardcoded to `DEFAULT_BACKOFF_FACTOR` at session build; both sibling clients expose
-  it as a constructor parameter. Inserted in the sibling position (before `api_key`) — an
-  ecosystem census found no call passing more than one positional argument, so nothing rebinds.
-
-### Fixed
 
 - **The HTTP adapter now sets `pool_connections` alongside `pool_maxsize`** (defect-register
   `APD-CCLIENT-009`). Both siblings set the pair explicitly (10/10); omitting one here left it on
@@ -138,10 +140,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Exception context survives `pickle` and `copy`.** `BaseException.__reduce__` returns `(cls, args, self.__dict__)` whenever the instance dict is non-empty, so the keyword-only context is restored automatically — but only while `args` holds exactly the constructor's positional message, which is the invariant `test_context_survives_pickle_and_copy` pins (the failure mode flake8-bugbear's `B042` warns about). An interim `__reduce__` override that reproduced this default byte-for-byte was removed with the `APD-CCLIENT-010` cleanup below; its stated rationale — that the default rebuilds from `args` alone — was wrong, and the same correction has landed in juniper-service-core and juniper-data-client.
 
 This is a port of the convention established in [juniper-data-client#158](https://github.com/pcalnon/juniper-data-client/pull/158). The three Juniper clients are separately released packages with no shared code, so nothing mechanical keeps them aligned; the alignment is a convention carried by each package's tests and AGENTS.md.
-
-### Changed
-
-- **Removed the redundant `pass` statements from the exception subclasses** (defect-register `APD-CCLIENT-010`). The register filed eight; `APD-CCLIENT-004`'s fix had already given the base class a real body, so **seven** remained. A docstring is a complete class body; the `pass` lines were dead weight. No behavioural change; the whole suite passes untouched.
 
 ## [0.7.0] - 2026-07-11
 
