@@ -5,7 +5,7 @@
 **Author**: Paul Calnon
 **License**: MIT License
 **Version**: 0.8.0
-**Last Updated**: 2026-08-31
+**Last Updated**: 2026-09-05
 
 ---
 
