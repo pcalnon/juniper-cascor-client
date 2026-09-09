@@ -45,6 +45,10 @@ test = [
     # METRICS-MON R2.2.4: tests exercise the observability counter under
     # the [observability] code path, so they require prometheus-client.
     "prometheus-client>=0.20.0",
+    # tests/test_main_verify_catchup_base.py parses .github/workflows/main-verify.yml
+    # to pin the sequence-safety verdict-step name. Without this the file is a
+    # COLLECTION ERROR (`import yaml`), not a skip -- i.e. red CI, not silent.
+    "pyyaml>=6.0.1",
 ]
 observability = [
     # METRICS-MON R2.2.4: opt-in dep that enables the
