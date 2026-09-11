@@ -154,7 +154,7 @@ jobs:
       - name: Install juniper-ci-tools (workflow-path + agents-md lints)
         run: |
           python -m pip install --upgrade "pip>=26.1.1"
-          pip install "juniper-ci-tools>=0.8.0,<0.10.0"
+          pip install "juniper-ci-tools>=0.9.0,<0.10.0"
 
       - name: Lint .github/workflows/ script paths
         run: |
@@ -274,7 +274,7 @@ jobs:
           echo "║       juniper-cascor-client - Per-File Coverage Gate       ║"
           echo "╚════════════════════════════════════════════════════════════╝"
 
-          python -m pip install "juniper-ci-tools>=0.8.0,<0.10.0"
+          python -m pip install "juniper-ci-tools>=0.9.0,<0.10.0"
           juniper-coverage-gap-map --coverage-json coverage.json --enforce
 
       - name: Upload Coverage Artifacts
@@ -446,7 +446,7 @@ jobs:
         shell: bash -l {0}
         run: |
           python -m pip install --upgrade "pip>=26.1.1"
-          pip install "juniper-ci-tools>=0.8.0,<0.10.0"
+          pip install "juniper-ci-tools>=0.9.0,<0.10.0"
 
       - name: Generate Dependency Documentation
         shell: bash -l {0}
