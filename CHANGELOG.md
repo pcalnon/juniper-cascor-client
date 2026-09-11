@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`lockfile-update.yml` committed the regenerated lockfile UNSIGNED**, which can block the merge it
+  exists to enable. The `required_signatures` ruleset is `~DEFAULT_BRANCH`-scoped, so the plain
+  `git commit` + `git push` to `dependabot/pip/**` *succeeded* and left an unsigned commit in the
+  branch's history. That is harmless under a squash merge — GitHub authors and signs the squash commit
+  itself — but this repo also allows **merge commits and rebase merges**, and both replay the original
+  commit onto `main`, where `required_signatures` rejects it. The step now goes through
+  `createCommitOnBranch`, which GitHub signs, matching juniper-cascor / juniper-data / juniper-canopy
+  and juniper-cascor-worker#180. `CROSS_REPO_DISPATCH_TOKEN` stays the identity so the commit still
+  re-triggers CI, and `expectedHeadOid` keeps the compare-and-swap the old push had. **Latent, never
+  fired**: every run so far found the lockfile already current and took the "no commit needed" branch.
+
 ## [0.8.0] - 2026-09-05
 
 ### Added
