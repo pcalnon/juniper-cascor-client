@@ -712,7 +712,7 @@ Relocated verbatim from `AGENTS.md` (P3 of the shared-session-memory plan) so it
 
 **Trigger**: pull requests (main, develop)
 
-Advisory, standalone — never a required check and never wired into the CI Quality Gate. Runs the shared `juniper-ci-tools` (`>=0.8.0,<0.9.0`) sequence-safety screens over the PR's `base..HEAD` so silent compositional losses are visible at review:
+Advisory, standalone — never a required check and never wired into the CI Quality Gate. Runs the shared `juniper-ci-tools` (`>=0.9.0,<0.10.0`) sequence-safety screens over the PR's `base..HEAD` so silent compositional losses are visible at review:
 
 - **symbol-loss screen** (`juniper-symbol-loss-check`, scoped `juniper_cascor_client/**/*.py` + `tests/**/*.py`) — FAILs on a silently deleted / gutted / duplicated `def` / `class` / method.
 - **docs deletion-magnitude screen** (`juniper-docs-additions-check`, universal docs scope) — FAILs on a deleted heading or a run of consecutive deleted lines.
