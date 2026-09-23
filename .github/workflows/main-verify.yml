@@ -25,7 +25,7 @@
 #    Unlike the two pioneer repos (juniper-ml, juniper-cascor) which vendored the screen
 #    modules under util/sequence_safety/, this repo consumes them from the PUBLISHED
 #    juniper-ci-tools package via the `juniper-symbol-loss-check` / `juniper-docs-additions-check`
-#    console scripts (pinned `>=0.8.0,<0.9.0`) -- one source of truth, no inline copy to drift.
+#    console scripts (pinned `>=0.9.0,<0.10.0`) -- one source of truth, no inline copy to drift.
 #
 #    Jobs:
 #      * symbol-screen -- ALWAYS runs. AST symbol-loss screen (scoped to
