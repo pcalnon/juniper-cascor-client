@@ -1,7 +1,7 @@
 # Developer Cheatsheet — juniper-cascor-client
 
-**Version**: 1.0.2
-**Date**: 2026-08-24
+**Version**: 1.0.3
+**Date**: 2026-10-08
 **Project**: juniper-cascor-client
 
 ---
@@ -189,12 +189,15 @@ JuniperCascorClientError (base)
 | WebSocket disconnects unexpectedly | Network interruption or server restart | Reconnect; `CascorTrainingStream` supports re-calling `connect()` |
 | Auth failures (401/403) | Missing or wrong API key | Set `JUNIPER_CASCOR_API_KEY` or pass `api_key=` to constructor |
 | Hostless URL accepted by `FakeCascorClient` | Fake still `rstrip("/")` only | Do not pin APD-CCLIENT-005 against the fake; use `JuniperCascorClient` |
+| `@claude` leaves a green Claude Code job and no reply | Workflow `contains` started the job, then the action's bounded phrase check missed | Write `@claude` as its own word: after the start of the text or whitespace, before whitespace, the end, or one of `.,!?;:`. Case does not matter to either check. See [Claude Code workflow](REFERENCE.md#claude-code-workflow-claudeyml). |
+| `@claude` fails with `Actor does not have write permissions` | Commenter lacks `admin` or `write`, or is a non-user with `allowed_bots` empty | A write collaborator has to comment. This workflow does not set `allowed_bots`. |
 
 ---
 
 ## Cross-References
 
 - [juniper-cascor-client REFERENCE.md](REFERENCE.md) -- Full API reference
+- [Claude Code workflow](REFERENCE.md#claude-code-workflow-claudeyml) -- `@claude` on issues and pull requests
 - [juniper-cascor-client QUICK_START.md](QUICK_START.md) -- Getting started guide
 - [juniper-cascor-client AGENTS.md](../AGENTS.md) -- Agent development guide
 - [Ecosystem Cheatsheet](../../juniper-ml/docs/DEVELOPER_CHEATSHEET_JUNIPER-ML.md) -- Cross-project procedures

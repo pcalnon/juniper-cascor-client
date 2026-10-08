@@ -2,9 +2,9 @@
 
 ## Navigation Guide to juniper-cascor-client Documentation
 
-**Version:** 0.1.2
+**Version:** 0.1.3
 **Status:** Active
-**Last Updated:** August 24, 2026
+**Last Updated:** October 8, 2026
 **Project:** Juniper - CasCor Service Client Library
 
 ---
@@ -32,6 +32,7 @@
 | **See version history** | [CHANGELOG.md](../CHANGELOG.md) | Root |
 | **Quick-reference dev tasks** | [DEVELOPER_CHEATSHEET.md](DEVELOPER_CHEATSHEET.md) | docs/ |
 | **Run tests** | [AGENTS.md](../AGENTS.md) | Root |
+| **Mention `@claude` on an issue or PR** | [REFERENCE.md — Claude Code workflow](REFERENCE.md#claude-code-workflow-claudeyml) | docs/ |
 
 ---
 
@@ -98,8 +99,8 @@ juniper-ml ──meta-package──> juniper-cascor-client
 
 ---
 
-**Last Updated:** August 24, 2026
-**Version:** 0.1.2
+**Last Updated:** October 8, 2026
+**Version:** 0.1.3
 **Maintainer:** Paul Calnon
 
 > See the [Juniper Ecosystem Guide](../../CLAUDE.md) for the full project map and dependency graph.
