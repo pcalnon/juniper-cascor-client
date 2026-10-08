@@ -2,9 +2,9 @@
 
 ## juniper-cascor-client Technical Reference
 
-**Version:** 0.1.2
+**Version:** 0.1.3
 **Status:** Active
-**Last Updated:** August 24, 2026
+**Last Updated:** October 8, 2026
 **Project:** Juniper - CasCor Service Client Library
 
 ---
@@ -20,6 +20,7 @@
 - [Directory Layout Reference](#directory-layout-reference)
 - [Constants Reference](#constants-reference)
 - [CI/CD Pipeline Reference](#cicd-pipeline-reference)
+- [Claude Code workflow](#claude-code-workflow-claudeyml)
 - [Scenario Reference](#scenario-reference)
 - [Configuration Reference](#configuration-reference)
 - [Environment Variables](#environment-variables)
@@ -725,6 +726,52 @@ Both JSON reports upload as the `sequence-safety-report` artifact. An owner labe
 
 Bypass-proof post-merge net: re-runs the two sequence-safety screens (same package + scope) against a catch-up base (the last successful `main-verify` tip, so a `[skip ci]` window is swept on the next run) after every merge to `main`. Per-SHA concurrency (`cancel-in-progress: false`) verifies every merge even during a storm; on failure it upserts a single stable-title tracking issue per red streak. Screens-only (no regression battery in this wave).
 
+#### Claude Code workflow (`claude.yml`)
+
+`.github/workflows/claude.yml` is the fleet `@claude` assistant for this repo.
+The file header says it is a drop-in copy of `juniper-ml/.github/workflows/claude.yml`.
+The job grants `contents: write`, `pull-requests: write`, `issues: write`, `id-token: write`, and `actions: read`.
+Checkout uses `fetch-depth: 1`.
+The only action input is `anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}`.
+The header says that secret is set at org level and that this repo must be able to read it.
+This repository is owned by a user account, so no organization secret reaches it: `ANTHROPIC_API_KEY` has to be a repository secret, and without it a run that gets past the trigger check fails at authentication. List the secret names with `gh api repos/pcalnon/juniper-cascor-client/actions/secrets --jq '.secrets[].name'`.
+The live action pin is the `# vX.Y.Z` comment on the `uses:` line.
+
+**What starts the job.** Four events are listened for. The job `if` uses GitHub's `contains`, which ignores case:
+
+| Event | Job runs when |
+|-------|----------------|
+| `issue_comment` (`created`) | Comment body contains `@claude` |
+| `pull_request_review_comment` (`created`) | Comment body contains `@claude` |
+| `pull_request_review` (`submitted`) | Review body contains `@claude` |
+| `issues` (`opened` or `assigned`) | Issue title or body contains `@claude` |
+
+**What does not start the job.**
+
+- `@claude` in a pull request title or body. `pull_request` is not an event on this workflow.
+- The label `claude`. `issues: [labeled]` is not an event here, and `label_trigger` is left at the action default.
+- Assigning an issue, by itself. `assigned` starts the job only when the title or body already contains `@claude`.
+
+Case is not one of the gates: `@Claude` and `@CLAUDE` start the job, and the action's phrase check below ignores case too.
+
+**Second gate, inside the action.** Write access is checked first.
+The actor's collaborator permission must be `admin` or `write`.
+Otherwise the step throws `Actor does not have write permissions to the repository` and the job fails.
+A login ending in `[bot]` passes this check without a permission lookup.
+A non-user whose lookup fails with `is not a user` is allowed only when `allowed_bots` lists them.
+This workflow leaves `allowed_bots` empty, so that lookup returns false and the job fails with the same write-permission error.
+
+If write access passes, the action looks for `@claude` with a case-insensitive match preceded by the start of the text or whitespace, and followed by whitespace, the end of the text, or one of `.,!?;:`. A miss logs `No trigger found, skipping remaining steps` and the step returns success: the job is green and Claude does not run. Two common misses:
+
+- An `assigned` event whose title or body contains `@claude`. The workflow `if` matched, but the action reads the title and body only on `opened`, and `assignee_trigger` is unset, so the assignee check cannot succeed.
+- A substring such as `@claude-code-action`. Workflow `contains` starts the job; the action's boundary check does not treat `-` as the end of the phrase.
+
+When the phrase matches, tag mode requires a human actor. With `allowed_bots` empty, a non-User fails the job with `Workflow initiated by non-human actor:`.
+
+**Where a commit lands.** An open pull request is checked out on its head branch. A fork pull request is fetched as `refs/pull/<n>/head`. This workflow's checkout is shallow, so that fetch uses depth `max(pull request commit count, 20)`. An issue, or a closed or merged pull request, creates `claude/issue-<n>-<YYYYMMDD-HHmm>` or `claude/pr-<n>-<YYYYMMDD-HHmm>` from the default branch (lowercase, 50-character cap, runner clock — UTC on `ubuntu-latest`).
+
+**Dependabot.** The `github-actions` updates in `.github/dependabot.yml` group only `github/codeql-action*`. `anthropics/claude-code-action` is ungrouped, so each pin bump is its own pull request. That bump changes the `uses:` SHA and the version comment. It does not change the events, the job `if`, the permissions, or the `with:` inputs above.
+
 ### Security Scanning
 
 | Tool | Purpose | Integration |
@@ -879,6 +926,6 @@ isort --check-only juniper_cascor_client  # Import order
 
 ---
 
-**Last Updated:** August 24, 2026
-**Version:** 0.1.2
+**Last Updated:** October 8, 2026
+**Version:** 0.1.3
 **Maintainer:** Paul Calnon
