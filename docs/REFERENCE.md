@@ -709,16 +709,24 @@ Relocated verbatim from `AGENTS.md` (P3 of the shared-session-memory plan) so it
 1. Build and publish to TestPyPI, verify installation
 2. Build and publish to production PyPI (trusted publishing / OIDC)
 
-#### `sequence-safety.yml` — Per-PR Sequence-Safety Net (Advisory)
+#### `sequence-safety.yml` — Per-PR Sequence-Safety Net (Required)
 
 **Trigger**: pull requests (main, develop)
 
-Advisory, standalone — never a required check and never wired into the CI Quality Gate. Runs the shared `juniper-ci-tools` (`>=0.9.0,<0.10.0`) sequence-safety screens over the PR's `base..HEAD` so silent compositional losses are visible at review:
+Required, standalone. The job publishes the status check **`Sequence Safety`**, and ruleset `juniper-cascor-client-rules` (id `13490605`) requires that context on the default branch, so a red run blocks merge into `main`. Runs the shared `juniper-ci-tools` (`>=0.9.0,<0.10.0`) sequence-safety screens over the PR's `base..HEAD` so silent compositional losses are visible at review:
 
 - **symbol-loss screen** (`juniper-symbol-loss-check`, scoped `juniper_cascor_client/**/*.py` + `tests/**/*.py`) — FAILs on a silently deleted / gutted / duplicated `def` / `class` / method.
 - **docs deletion-magnitude screen** (`juniper-docs-additions-check`, universal docs scope) — FAILs on a deleted heading or a run of consecutive deleted lines.
 
-Both JSON reports upload as the `sequence-safety-report` artifact. An owner label hatch (`allow-symbol-loss` / `docs-rewrite`) demotes a screen to WARN-only; the `Allow-Symbol-Loss:` / `Allow-Docs-Rewrite:` commit trailers are the primary enumerated waivers.
+**Quality Gate and the ruleset are different levers.** `sequence-safety.yml` is its own workflow, so its job is not in `ci.yml`'s Quality Gate (`required-checks`) `needs:` — a `needs:` entry can only name a job in the same workflow. A green Quality Gate therefore does not mean the PR is mergeable. Being required is a ruleset property; read the ruleset when this page and a workflow header disagree:
+
+```bash
+gh api repos/pcalnon/juniper-cascor-client/rulesets/13490605 \
+  --jq '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context'
+```
+
+Both JSON reports upload as the `sequence-safety-report` artifact. An owner label hatch (`allow-symbol-loss` / `docs-rewrite`) demotes that screen to WARN-only (`--advisory`: findings still print, exit `0`), which greens the required context for that PR; it does not clear the post-merge net.
+The `Allow-Symbol-Loss:` / `Allow-Docs-Rewrite:` commit trailers are the primary enumerated waivers and the only ones `main-verify.yml` honours — on a squash merge, carry them into the squash commit message, because that commit is what it screens on `main`.
 
 #### `main-verify.yml` — Post-Merge Verification Net
 

@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and juniper-cascor-worker#180. `CROSS_REPO_DISPATCH_TOKEN` stays the identity so the commit still
   re-triggers CI, and `expectedHeadOid` keeps the compare-and-swap the old push had. **Latent, never
   fired**: every run so far found the lockfile already current and took the "no commit needed" branch.
+- **`docs/REFERENCE.md` called `Sequence Safety` advisory and "never a required check"**. Ruleset
+  `juniper-cascor-client-rules` (13490605) requires that context on `main`, so a red run blocks the
+  merge. #162 corrected the `sequence-safety.yml` header but not this section. The section is now
+  titled *(Required)*. It says the check sits outside `ci.yml`'s Quality Gate `needs:`, so a green
+  Quality Gate does not mean mergeable, and it gives the ruleset query. It also says the owner labels
+  green the context for one PR without clearing `main-verify.yml`, which honours only the
+  `Allow-Symbol-Loss:` / `Allow-Docs-Rewrite:` trailers. Three workflow comments made the same
+  claim and now match: `main-verify.yml`'s header, plus `sequence-safety.yml`'s concurrency comment
+  and References line. Comment text only; the parsed YAML is unchanged.
 
 ## [0.8.0] - 2026-09-05
 
