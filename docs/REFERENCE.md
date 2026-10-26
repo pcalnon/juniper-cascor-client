@@ -732,7 +732,7 @@ The `Allow-Symbol-Loss:` / `Allow-Docs-Rewrite:` commit trailers are the primary
 
 **Trigger**: push (main), workflow_dispatch
 
-Bypass-proof post-merge net: re-runs the two sequence-safety screens (same package + scope) against a catch-up base (the last successful `main-verify` tip, so a `[skip ci]` window is swept on the next run) after every merge to `main`. Per-SHA concurrency (`cancel-in-progress: false`) verifies every merge even during a storm; on failure it upserts a single stable-title tracking issue per red streak. Screens-only (no regression battery in this wave).
+Bypass-proof post-merge net: re-runs the two sequence-safety screens (same package + scope) against a catch-up base after every merge to `main`, so a `[skip ci]` window is swept on the next run. The base is the `head_sha` of the newest of the last 20 completed `main-verify` runs whose `Assert screens reached a verdict` step succeeded, when it is an ancestor of `HEAD` (a run with a finding counts: its window was screened); else the last successful run's, then `github.event.before`, then `HEAD^1`. Per-SHA concurrency (`cancel-in-progress: false`) verifies every merge even during a storm; on failure it upserts a single stable-title tracking issue per red streak. Screens-only (no regression battery in this wave).
 
 #### Claude Code workflow (`claude.yml`)
 
@@ -741,7 +741,7 @@ The file header says it is a drop-in copy of `juniper-ml/.github/workflows/claud
 The job grants `contents: write`, `pull-requests: write`, `issues: write`, `id-token: write`, and `actions: read`.
 Checkout uses `fetch-depth: 1`.
 The only action input is `anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}`.
-The header says that secret is set at org level and that this repo must be able to read it.
+The header names it as a repository secret.
 This repository is owned by a user account, so no organization secret reaches it: `ANTHROPIC_API_KEY` has to be a repository secret, and without it a run that gets past the trigger check fails at authentication. List the secret names with `gh api repos/pcalnon/juniper-cascor-client/actions/secrets --jq '.secrets[].name'`.
 The live action pin is the `# vX.Y.Z` comment on the `uses:` line.
 
