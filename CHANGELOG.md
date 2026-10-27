@@ -36,6 +36,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Allow-Symbol-Loss:` / `Allow-Docs-Rewrite:` trailers. Three workflow comments made the same
   claim and now match: `main-verify.yml`'s header, plus `sequence-safety.yml`'s concurrency comment
   and References line. Comment text only; the parsed YAML is unchanged.
+- **`lockfile-update.yml` could commit an empty lockfile.** The commit step built its
+  `createCommitOnBranch` payload with `--arg contents "$(base64 -w0 requirements.lock)"`. A failure
+  inside a command substitution used as a command argument does not trip `set -e`, so a failing or
+  silent `base64` handed jq an empty string and the step went on to commit an empty
+  `requirements.lock`. The step now encodes on its own line, where `set -e` does stop it, and refuses
+  an empty payload (`::error::base64 produced an empty payload -- lockfile NOT committed`) before it
+  calls gh. **Latent**: the step runs on `ubuntu-latest`, whose GNU `base64` does not fail this way,
+  and nothing reaches it here today: the workflow has never run, and this repo tracks no
+  `requirements.lock`. Found by the flood-3 evaluation (juniper-ml
+  `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4).
+- **Two workflow headers described behaviour their workflows do not have.** `main-verify.yml` said
+  the catch-up base is the most recent SUCCESSFUL run. Since #153 the resolver takes the newest of
+  the last 20 completed runs whose `Assert screens reached a verdict` step passed, so a run with a
+  finding advances the base, and it falls back to the last successful run only after that. Four
+  more comments in the file repeated the old claim (the `actions: read` notes in the header and on
+  the job, and the base comments in the resolver and screens steps) and now match, as does
+  `docs/REFERENCE.md`'s description of the net. `claude.yml` said `ANTHROPIC_API_KEY` is set at the
+  org level. This repo is user-owned, so no organization secret reaches it; the key is a repository
+  secret (added 2026-10-08), and `docs/REFERENCE.md`'s sentence quoting the old header now quotes
+  the new one. Comment text only: `claude.yml` parses identically, and `main-verify.yml` differs
+  only in shell comment lines inside its `run:` blocks. Both are flood-3 §4 rows.
 
 ## [0.8.0] - 2026-09-05
 
