@@ -51,6 +51,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The nightly `scheduled-tests.yml` lane runs again under pytest 9.2.0: it selects `-m integration`.** The workflow
+  came from juniper-ml's `notes/templates/ci/scheduled-tests.yml` and kept the template's default selector,
+  `-m "slow or integration"`, although the template's TODO 2 says a repo without `slow` markers should use just
+  `integration`. This repo registers no `slow` marker and runs pytest with `--strict-markers`. From pytest 9.2.0 an
+  unregistered marker in a `-m` expression is a usage error under `--strict-markers`, so every leg exited 4
+  (`ERROR: Unknown marker(s) in '-m' expression: slow`) on every nightly run from 2026-10-28, the first to install
+  9.2.0, through 2026-11-15. pytest 9.1.1 had accepted the same expression (both measured on 2026-11-15 against a
+  two-test project).
+  - The selector is now `integration`. It selects what the old one did, since `--strict-markers` already refused any
+    test marked `slow`.
+  - The step's comment says why, and its exit-5 comment and notice no longer mention `slow`. This repo still has no
+    `@pytest.mark.integration` test (the last green run, on 2026-10-27, deselected all 573), so each leg ends on that
+    notice until it grows one.
+
 - **The informational Python 3.15 legs no longer show as failed checks when they fail** (the owner's report of
   2026-11-15: the 3.15 checks "are supposed to produce an informational message without affecting the ability of
   code to commit, push, PR, or merge"). #195's job-level `continue-on-error` keeps the Quality Gate green, but a
