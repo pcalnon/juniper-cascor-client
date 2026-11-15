@@ -2,9 +2,9 @@
 
 ## juniper-cascor-client Technical Reference
 
-**Version:** 0.1.3
+**Version:** 0.1.4
 **Status:** Active
-**Last Updated:** October 8, 2026
+**Last Updated:** November 14, 2026
 **Project:** Juniper - CasCor Service Client Library
 
 ---
@@ -695,7 +695,7 @@ Relocated verbatim from `AGENTS.md` (P3 of the shared-session-memory plan) so it
 |-----|--------|---------|
 | **pre-commit** | Python 3.11, 3.12, 3.13 | All pre-commit hooks |
 | **docs** | Single run | Documentation link validation |
-| **unit-tests** | Python 3.11, 3.12, 3.13 | pytest with 80% coverage gate |
+| **unit-tests** | Python 3.12, 3.13, 3.14 on Ubuntu; 3.12 on macOS; 3.15 on Ubuntu (informational, never blocks) | pytest with 80% coverage gate |
 | **build** | Single run | sdist + wheel + twine check |
 | **dependency-docs** | Single run | Generate conf/ files |
 | **security** | Single run | Gitleaks, Bandit SARIF, pip-audit |
@@ -934,6 +934,6 @@ isort --check-only juniper_cascor_client  # Import order
 
 ---
 
-**Last Updated:** October 8, 2026
-**Version:** 0.1.3
+**Last Updated:** November 14, 2026
+**Version:** 0.1.4
 **Maintainer:** Paul Calnon
