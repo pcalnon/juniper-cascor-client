@@ -51,6 +51,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The informational Python 3.15 legs no longer show as failed checks when they fail** (the owner's report of
+  2026-11-15: the 3.15 checks "are supposed to produce an informational message without affecting the ability of
+  code to commit, push, PR, or merge"). #195's job-level `continue-on-error` keeps the Quality Gate green, but a
+  failing 3.15 leg's own check still concluded `failure`: a red X and "Some checks were not successful" on the pull
+  request, a merge state of `UNSTABLE`, and a failure for `gh pr checks` and any tool that reads every check. Here
+  the 3.15 unit and integration legs pass, but the daily `Slow / Integration Tests (3.15)` leg fails, as every leg of
+  `scheduled-tests.yml` does, on the pre-existing `Unknown marker(s) in '-m' expression: slow` error. The run
+  dispatched on #195's head put that red check on the pull request.
+  - Every step of `.github/workflows/ci.yml`'s `unit-tests` and `integration-tests` jobs and of
+    `.github/workflows/scheduled-tests.yml`'s `slow-or-integration-tests` job now carries an `id` and
+    `continue-on-error: ${{ matrix.experimental == true }}`, so on the 3.15 leg a failing step neither stops the
+    job nor turns its check red. A last step, `Report the informational Python 3.15 result`, reports each failed step
+    as a `::warning` annotation and as a table in the job summary, and emits a `::notice` when every step passed.
+  - The blocking legs are unchanged, because the expression is false on them, and no check changes its name. The
+    3.12-3.14 legs of `scheduled-tests.yml` stay red until the marker error is fixed, which this change does not do.
+  - Measured on juniper-ml#2578 (head `91591864`): its `Regression Tests (Python 3.15)` check concluded `success`
+    while two of its steps failed, and carried a warning annotation naming them.
+  - Applied with the script juniper-ml#2578 adds, `util/ad-hoc/2026-11-15_py315_informational_green_legs.py`. It
+    edits each workflow as text and re-parses it, and refuses unless the job keeps the same steps in the same order
+    plus the report step, every step carries the expression, the ids are unique and no other job changed.
+
 - **`lockfile-update.yml` committed the regenerated lockfile UNSIGNED**, which can block the merge it
   exists to enable. The `required_signatures` ruleset is `~DEFAULT_BRANCH`-scoped, so the plain
   `git commit` + `git push` to `dependabot/pip/**` *succeeded* and left an unsigned commit in the
