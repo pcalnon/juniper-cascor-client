@@ -705,10 +705,21 @@ Relocated verbatim from `AGENTS.md` (P3 of the shared-session-memory plan) so it
 
 #### `publish.yml` — PyPI Publishing
 
-**Trigger**: GitHub release published
+**Triggers**: GitHub release published (the build job admits `v*` tags only); `workflow_dispatch` from a release tag, which only republishes (below)
 
-1. Build and publish to TestPyPI, verify installation
-2. Build and publish to production PyPI (trusted publishing / OIDC)
+1. `Build and Validate` builds the sdist and wheel once (`python -m build`, `twine check`), records their sha256 in `SHA256SUMS` and uploads both as one artifact, `juniper-cascor-client-dist`, kept 90 days; a re-run attempt reuses that artifact instead of building again
+2. `Publish to TestPyPI` checks the files against `SHA256SUMS`, uploads them, requires TestPyPI's JSON to list exactly those sha256, then verifies the install (`--no-deps`, TestPyPI index only)
+3. `Publish to PyPI`, behind the `pypi` approval, checks the same files against `SHA256SUMS` and TestPyPI's JSON again, uploads them (trusted publishing / OIDC), then checks PyPI's JSON. Only the jobs that upload hold `id-token: write`
+
+The steps marked `One-artifact publish template`, and the `republish` job, are verbatim copies of juniper-cascor's `publish.yml` (juniper-cascor#763, #767); `tests/test_publish_one_artifact.py` pins them to its sha256, so change them there first. The contract: juniper-cascor's [`docs/ci_cd/MANUAL.md` § One Artifact, Checked Against TestPyPI](https://github.com/pcalnon/juniper-cascor/blob/main/docs/ci_cd/MANUAL.md#one-artifact-checked-against-testpypi).
+
+**A release that did not reach PyPI**: the owner's recovery ladder (ruling of 2026-11-15), in this order ([§ Recovering a Release That Did Not Reach PyPI](https://github.com/pcalnon/juniper-cascor/blob/main/docs/ci_cd/MANUAL.md#recovering-a-release-that-did-not-reach-pypi)):
+
+1. **Republish TestPyPI's files**: `gh workflow run publish.yml --repo pcalnon/juniper-cascor-client --ref v<version> -f republish_from_testpypi=true`. Only `Republish the tested files (dispatch only)` runs, behind the `pypi` gate; it builds nothing, and only a tag cut after this job landed carries it.
+2. **If that fails, within 30 days of the release run**: **Re-run failed jobs** on the release run, which reuses the run's artifact.
+3. **Otherwise**: cut a new patch version.
+
+Never "Re-run all jobs" on a publish run, nor `gh run rerun <id>` without `--failed`.
 
 #### `sequence-safety.yml` — Per-PR Sequence-Safety Net (Required)
 
