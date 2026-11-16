@@ -2,9 +2,9 @@
 
 ## juniper-cascor-client Technical Reference
 
-**Version:** 0.1.5
+**Version:** 0.1.6
 **Status:** Active
-**Last Updated:** November 15, 2026
+**Last Updated:** November 16, 2026
 **Project:** Juniper - CasCor Service Client Library
 
 ---
@@ -716,9 +716,11 @@ The steps marked `One-artifact publish template`, and the `republish` job, are v
 **A release that did not reach PyPI**: the owner's recovery ladder (ruling of 2026-11-15), in this order ([§ Recovering a Release That Did Not Reach PyPI](https://github.com/pcalnon/juniper-cascor/blob/main/docs/ci_cd/MANUAL.md#recovering-a-release-that-did-not-reach-pypi)):
 
 1. **Republish TestPyPI's files**: `gh workflow run publish.yml --repo pcalnon/juniper-cascor-client --ref v<version> -f republish_from_testpypi=true`. Only `Republish the tested files (dispatch only)` runs, behind the `pypi` gate; it builds nothing, and only a tag cut after this job landed carries it.
+   It copies TestPyPI's files whatever the release run's jobs concluded, so use it only when that run's `Publish to TestPyPI` succeeded, or failed on index lag alone (a JSON check or the install check that gave up waiting).
 2. **If that fails, within 30 days of the release run**: **Re-run failed jobs** on the release run, which reuses the run's artifact.
 3. **Otherwise**: cut a new patch version.
 
+A broken package is neither case: when `Publish to TestPyPI` failed after its upload for a real reason (the install check refused the package, say for its `Requires-Python`), TestPyPI already holds those files, and neither rung 1 nor "Re-run failed jobs" can change them, so cut a new patch version.
 Never "Re-run all jobs" on a publish run, nor `gh run rerun <id>` without `--failed`.
 
 #### `sequence-safety.yml` — Per-PR Sequence-Safety Net (Required)
@@ -1002,6 +1004,6 @@ isort --check-only juniper_cascor_client  # Import order
 
 ---
 
-**Last Updated:** November 15, 2026
-**Version:** 0.1.5
+**Last Updated:** November 16, 2026
+**Version:** 0.1.6
 **Maintainer:** Paul Calnon
