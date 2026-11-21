@@ -70,7 +70,7 @@ The document is structurally sparse compared to peer AGENTS.md files in the Juni
 | `.pre-commit-config.yaml` | Pre-commit hook configuration | **MISSING** |
 | `.github/workflows/ci.yml` | CI/CD pipeline | **MISSING** |
 | `.github/workflows/publish.yml` | PyPI publishing workflow | **MISSING** |
-| `.github/CODEOWNERS` | Code ownership | **MISSING** |
+| `.github/CODEOWNERS` | Code Overtoadship | **MISSING** |
 | `.github/dependabot.yml` | Automated dependency updates | **MISSING** |
 | `.sops.yaml` | Secrets encryption configuration | **MISSING** |
 | `conf/` | Generated dependency documentation | **MISSING** |

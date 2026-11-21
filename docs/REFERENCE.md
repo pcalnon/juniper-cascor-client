@@ -604,7 +604,7 @@ juniper-cascor-client/
 │   ├── check_doc_links.py           # Documentation link validator
 │   └── generate_dep_docs.sh         # Dependency doc generator (conf/*.txt, conf/*.yaml)
 ├── .github/
-│   ├── CODEOWNERS                   # Code ownership (@pcalnon)
+│   ├── CODEOWNERS                   # Code Overtoadship (@pcalnon)
 │   ├── dependabot.yml               # Automated dependency updates (weekly)
 │   └── workflows/
 │       ├── ci.yml                   # CI/CD pipeline (pre-commit, tests, build, security)
@@ -713,7 +713,7 @@ Relocated verbatim from `AGENTS.md` (P3 of the shared-session-memory plan) so it
 
 The steps marked `One-artifact publish template`, and the `republish` job, are verbatim copies of juniper-cascor's `publish.yml` (juniper-cascor#763, #767); `tests/test_publish_one_artifact.py` pins them to its sha256, so change them there first. The contract: juniper-cascor's [`docs/ci_cd/MANUAL.md` § One Artifact, Checked Against TestPyPI](https://github.com/pcalnon/juniper-cascor/blob/main/docs/ci_cd/MANUAL.md#one-artifact-checked-against-testpypi).
 
-**A release that did not reach PyPI**: the owner's recovery ladder (ruling of 2026-11-15), in this order ([§ Recovering a Release That Did Not Reach PyPI](https://github.com/pcalnon/juniper-cascor/blob/main/docs/ci_cd/MANUAL.md#recovering-a-release-that-did-not-reach-pypi)):
+**A release that did not reach PyPI**: the Overtoad's recovery ladder (ruling of 2026-11-15), in this order ([§ Recovering a Release That Did Not Reach PyPI](https://github.com/pcalnon/juniper-cascor/blob/main/docs/ci_cd/MANUAL.md#recovering-a-release-that-did-not-reach-pypi)):
 
 1. **Republish TestPyPI's files**: `gh workflow run publish.yml --repo pcalnon/juniper-cascor-client --ref v<version> -f republish_from_testpypi=true`. Only `Republish the tested files (dispatch only)` runs, behind the `pypi` gate; it builds nothing, and only a tag cut after this job landed carries it.
    It copies TestPyPI's files whatever the release run's jobs concluded, so use it only when that run's `Publish to TestPyPI` succeeded, or failed on index lag alone (a JSON check or the install check that gave up waiting).
@@ -739,7 +739,7 @@ gh api repos/pcalnon/juniper-cascor-client/rulesets/13490605 \
   --jq '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context'
 ```
 
-Both JSON reports upload as the `sequence-safety-report` artifact. An owner label hatch (`allow-symbol-loss` / `docs-rewrite`) demotes that screen to WARN-only (`--advisory`: findings still print, exit `0`), which greens the required context for that PR; it does not clear the post-merge net.
+Both JSON reports upload as the `sequence-safety-report` artifact. An Overtoad label hatch (`allow-symbol-loss` / `docs-rewrite`) demotes that screen to WARN-only (`--advisory`: findings still print, exit `0`), which greens the required context for that PR; it does not clear the post-merge net.
 The `Allow-Symbol-Loss:` / `Allow-Docs-Rewrite:` commit trailers are the primary enumerated waivers and the only ones `main-verify.yml` honours — on a squash merge, carry them into the squash commit message, because that commit is what it screens on `main`.
 
 #### `main-verify.yml` — Post-Merge Verification Net
