@@ -1,6 +1,6 @@
 # Juniper Cascor Client v0.7.0 Release Notes
 
-**Release Date:** DRAFT — Overtoad cuts the GitHub Release (plan unit CL2)
+**Release Date:** DRAFT — owner cuts the GitHub Release (plan unit CL2)
 **Version:** 0.7.0
 **Release Type:** MINOR
 
@@ -10,7 +10,7 @@
 
 This release makes the client a first-class citizen of the cascor WebSocket heartbeat contract and gives consumers a real connection-liveness surface. It is the client half (plan unit CL1) of the 2026-07-10 incident fix: cascor pings every WS connection every 30 seconds and closes it when nothing comes back within 10 seconds, but this client never answered pings — and on `/ws/control` nothing even read the socket until the first `set_params` — so canopy's control WebSocket was silently killed 40 seconds after connect and then held as a half-open corpse for 12+ hours, burning every hot-parameter push's WS window before the REST fallback. The server half (explicit contract, tolerance, deliverable close frames, emission instrumentation) is cascor unit C3.
 
-> **Status:** DRAFT — additive, backward-compatible MINOR release. Do not tag or publish from this document; the Overtoad cuts the GitHub Release per the ecosystem release convention (juniper-ml `notes/JUNIPER_2026-06-18_JUNIPER-ECOSYSTEM_PYPI-PUBLISH-PROCEDURE.md` §11), which triggers `publish.yml`. The canopy floor bump + `FakeCascorClient`-consumer verification follow as CL2.
+> **Status:** DRAFT — additive, backward-compatible MINOR release. Do not tag or publish from this document; the owner cuts the GitHub Release per the ecosystem release convention (juniper-ml `notes/JUNIPER_2026-06-18_JUNIPER-ECOSYSTEM_PYPI-PUBLISH-PROCEDURE.md` §11), which triggers `publish.yml`. The canopy floor bump + `FakeCascorClient`-consumer verification follow as CL2.
 
 ---
 
@@ -81,7 +81,7 @@ No public API or wire-format removals. Consumers that relied on seeing raw `ping
 
 ---
 
-## Post-release (CL2 — Overtoad-gated)
+## Post-release (CL2 — owner-gated)
 
 1. Cut the GitHub Release for `v0.7.0` (triggers `publish.yml`: TestPyPI verify → PyPI).
 2. Bump juniper-canopy's `juniper-cascor-client` floor to `>=0.7.0` and wire its supervisor (plan unit N2) to `is_alive()` / `is_connected`.

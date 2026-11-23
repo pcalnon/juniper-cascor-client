@@ -604,7 +604,7 @@ juniper-cascor-client/
 │   ├── check_doc_links.py           # Documentation link validator
 │   └── generate_dep_docs.sh         # Dependency doc generator (conf/*.txt, conf/*.yaml)
 ├── .github/
-│   ├── CODEOWNERS                   # Code Overtoadship (@pcalnon)
+│   ├── CODEOWNERS                   # Code ownership (@pcalnon)
 │   ├── dependabot.yml               # Automated dependency updates (weekly)
 │   └── workflows/
 │       ├── ci.yml                   # CI/CD pipeline (pre-commit, tests, build, security)
