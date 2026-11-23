@@ -204,13 +204,13 @@ jobs:
     name: Unit Tests + Coverage (Python ${{ matrix.python-version }} on ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: [pre-commit]
-    # The Python 3.15 leg is INFORMATIONAL: phase 1 of the ecosystem's 3.15 migration (owner request,
+    # The Python 3.15 leg is INFORMATIONAL: phase 1 of the ecosystem's 3.15 migration (Overtoad request,
     # 2026-11-14) runs it so its results show, but it must block no merge. It is the only leg with
     # `experimental: true` (the macOS leg leaves the flag unset, which compares as false), so this
     # expression is true on it alone: a failure there leaves the job's result, which the Quality Gate
     # reads as `needs.unit-tests.result`, unchanged, so it fails neither the job nor the gate, and
     # `build` and (on a push to `main`) `notify-downstream` still run. Measured on juniper-data#538
-    # (run 43655144734). The leg's context is in no ruleset. Keep both until the owner makes 3.15 a
+    # (run 43655144734). The leg's context is in no ruleset. Keep both until the Overtoad makes 3.15 a
     # required version (phase 3 of the migration).
     continue-on-error: ${{ matrix.experimental == true }}
     strategy:
@@ -361,11 +361,11 @@ jobs:
     name: Integration Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     needs: [pre-commit]
-    # Python 3.15 is INFORMATIONAL here too (phase 1 of the 3.15 migration, owner request 2026-11-14):
+    # Python 3.15 is INFORMATIONAL here too (phase 1 of the 3.15 migration, Overtoad request 2026-11-14):
     # `Integration Tests (Python 3.15)` reports, but under this expression a failure there leaves
     # `needs.integration-tests.result` unchanged, so it fails neither the job nor the Quality Gate.
     # Its context is in no ruleset; the 3.12-3.14 contexts stay required. Same pattern as unit-tests
-    # (measured on juniper-data#538, run 43655144734); keep it until the owner makes 3.15 required.
+    # (measured on juniper-data#538, run 43655144734); keep it until the Overtoad makes 3.15 required.
     continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
