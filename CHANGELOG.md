@@ -115,6 +115,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and nothing reaches it here today: the workflow has never run, and this repo tracks no
   `requirements.lock`. Found by the flood-3 evaluation (juniper-ml
   `notes/JUNIPER_2026-10-08_JUNIPER-ECOSYSTEM_CURSOR-FLOOD-3-DISPOSITION.md` §4).
+- **The lockfile regen's own failure message could never print: a GraphQL error ended the step at the
+  `gh` line** (`lockfile-update.yml`, banner 0.1.1). `gh api graphql` exits 1, not 0, on a response
+  that carries GraphQL `errors` (it writes the body to stdout and `gh: <message>` to stderr; cli/cli
+  `pkg/cmd/api/api.go`, `processResponse`), and on an HTTP failure. Called bare under
+  `set -euo pipefail`, that exit ended the commit step before its `.errors` check, so
+  `createCommitOnBranch failed — lockfile NOT committed:` was unreachable and the log would show only
+  gh's line. The step now captures gh's exit status and stderr, prints gh's message with the
+  `CROSS_REPO_DISPATCH_TOKEN` value masked, and fails with its own diagnostic: the GraphQL `errors`,
+  gh's exit status and what to do, or, when the response carries no `errors`, `gh api graphql failed`
+  and the branch to check, because that log cannot show whether the commit landed. A successful run
+  prints what it printed before. **Latent**: the workflow has never run here, and this repo tracks no
+  `requirements.lock`. The new `tests/test_lockfile_commit_gh_failure.py` runs the step's own shell
+  against a stub gh that fails as the real CLI does (the body on stdout, then its message on stderr,
+  then the exit status): eight cases pin both diagnostics, the mask and gh's exit status, and all
+  eight fail against the old step; a ninth pins a successful run's exact output and request. A port of
+  juniper-canopy#814, under the Overtoad's ruling 26 (2026-11-12) of the Cursor flood-4 evaluation.
 - **Two workflow headers described behaviour their workflows do not have.** `main-verify.yml` said
   the catch-up base is the most recent SUCCESSFUL run. Since #153 the resolver takes the newest of
   the last 20 completed runs whose `Assert screens reached a verdict` step passed, so a run with a
