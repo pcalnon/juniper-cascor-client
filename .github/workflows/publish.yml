@@ -350,7 +350,7 @@ jobs:
           # and that the wheel holds the package: find_spec locates juniper_cascor_client without
           # running it, and a missing package, or a bare directory with no origin, fails the step
           # through SystemExit, which PYTHONOPTIMIZE keeps (it would strip an assert statement).
-          python -c "import importlib.metadata as m, importlib.util as u; spec = u.find_spec('juniper_cascor_client'); origin = spec.origin if spec else None; print('TestPyPI install OK', m.version('juniper-cascor-client'), 'package at', origin); raise SystemExit(0 if origin else 'the installed wheel holds no juniper_cascor_client package')"
+          python -c "import importlib.metadata as m, importlib.util as u; spec = u.find_spec('juniper_cascor_client'); origin = spec.origin if spec else None; print('TestPyPI install', m.version('juniper-cascor-client'), 'package at', origin); raise SystemExit(0 if origin else 'the installed wheel holds no juniper_cascor_client package')"
 
   pypi:
     name: Publish to PyPI

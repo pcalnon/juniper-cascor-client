@@ -228,13 +228,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   above, template verbatim).
   - **The install check has a job of its own** (ruling 2). `Verify the TestPyPI install` needs `Publish to TestPyPI`,
     and `Publish to PyPI` needs both. It runs the package TestPyPI serves, so it holds `contents: read` alone: no
-    environment and no `id-token`. Until now the check ran in the TestPyPI job, so the package it installed ran with
-    that job's OIDC token-request variables in its environment. It keeps its `setup-python` (3.12), its `--no-deps`
-    install from TestPyPI alone and its metadata check, now run from `$RUNNER_TEMP`; it reads the release's tag through
-    the step's `env`, never pasted into the script by an expression, and it checks nothing out. `Publish to TestPyPI`
-    drops its checkout and `setup-python` and holds `id-token: write` alone, so the job that can mint runs only the
-    template steps and the upload. The new job's name holds "TestPyPI", so juniper-ml's release-train ceremony reads
-    its failure as `HALT_TESTPYPI`.
+    environment and no `id-token`. Until now the check ran in the TestPyPI job, so pip and the check ran with that
+    job's OIDC token-request variables in their environment (the check read only the package's metadata). It keeps its
+    `setup-python` (3.12), its `--no-deps` install from TestPyPI alone and its metadata check, now run from
+    `$RUNNER_TEMP`; it reads the release's tag through the step's `env`, never pasted into the script by an expression,
+    and it checks nothing out. `Publish to TestPyPI` drops its checkout and `setup-python` and holds `id-token: write`
+    alone, so the job that can mint runs only the template steps and the upload. The new job's name holds "TestPyPI",
+    so juniper-ml's release-train ceremony reads its failure as `HALT_TESTPYPI`.
   - **The install retries, then names index lag.** After its 30 s wait it makes the template's 5 tries, 10 s apart,
     and after the fifth failed install fails with "… is not installable from TestPyPI after 5 tries (index lag?):
     Re-run failed jobs; a real failure repeats".

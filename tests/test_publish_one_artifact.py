@@ -213,8 +213,9 @@ LAG_ERROR = "is not installable from TestPyPI after 5 tries (index lag?): Re-run
 #: and the package itself found by ``importlib.util.find_spec``, which locates it without running it (an import would
 #: need ``requests``, ``websockets`` and juniper-cascor-protocol, absent under ``--no-deps``). It must be found with an
 #: origin, so a bare directory, which loads as a namespace package, fails too, and it fails through ``SystemExit``,
-#: which ``PYTHONOPTIMIZE`` keeps, where it would strip an ``assert`` statement.
-PACKAGE_CHECK = f"""python -c "import importlib.metadata as m, importlib.util as u; spec = u.find_spec('{MODULE}'); origin = spec.origin if spec else None; print('TestPyPI install OK', m.version('{PACKAGE}'), 'package at', origin); raise SystemExit(0 if origin else 'the installed wheel holds no {MODULE} package')\""""
+#: which ``PYTHONOPTIMIZE`` keeps, where it would strip an ``assert`` statement. It prints juniper-cascor's neutral line
+#: (``publish-protocol.yml``'s), with no "OK" before the check has passed (#206's review, R5).
+PACKAGE_CHECK = f"""python -c "import importlib.metadata as m, importlib.util as u; spec = u.find_spec('{MODULE}'); origin = spec.origin if spec else None; print('TestPyPI install', m.version('{PACKAGE}'), 'package at', origin); raise SystemExit(0 if origin else 'the installed wheel holds no {MODULE} package')\""""
 #: The install check's script, exactly, line by line (the text juniper-ml's cross-repo checker pins for this step): a
 #: check of its parts would pass a ``|| true`` on the pip line.
 INSTALL_CHECK_LINES = [
@@ -838,7 +839,7 @@ class TestInstallCheckScript:
     def test_the_package_check_passes_for_a_wheel_that_holds_the_package_without_running_it(self, tmp_path):
         proc = _run_package_check(tmp_path, "package")
         assert proc.returncode == 0, proc.stdout + proc.stderr
-        assert proc.stdout.startswith("TestPyPI install OK 1.2.3 package at ")
+        assert proc.stdout.startswith("TestPyPI install 1.2.3 package at ")
         assert proc.stdout.strip().endswith(str(tmp_path / "site" / MODULE / "__init__.py"))
 
     @pytest.mark.parametrize("optimize", ["", "1", "2"], ids=["plain", "PYTHONOPTIMIZE=1", "PYTHONOPTIMIZE=2"])
@@ -847,6 +848,9 @@ class TestInstallCheckScript:
         proc = _run_package_check(tmp_path, wheel, **({"PYTHONOPTIMIZE": optimize} if optimize else {}))
         assert proc.returncode == 1, proc.stdout + proc.stderr
         assert f"the installed wheel holds no {MODULE} package" in proc.stderr
+        # The line it prints first says what it found, and no "OK": the log never reads as a pass before the verdict.
+        assert proc.stdout.startswith("TestPyPI install 1.2.3 package at None")
+        assert "OK" not in proc.stdout
 
     def test_the_package_check_fails_when_nothing_is_installed(self, tmp_path):
         proc = _run_package_check(tmp_path, "nothing")
