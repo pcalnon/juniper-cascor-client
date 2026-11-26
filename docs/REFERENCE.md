@@ -2,7 +2,7 @@
 
 ## juniper-cascor-client Technical Reference
 
-**Version:** 0.1.7
+**Version:** 0.1.8
 **Status:** Active
 **Last Updated:** November 26, 2026
 **Project:** Juniper - CasCor Service Client Library
@@ -726,7 +726,10 @@ When rung 1 refuses, or the release run failed before PyPI:
 - **A TestPyPI job failed on index lag** (a JSON check, or the install check, gave up waiting for the index, and its error says so): **Re-run failed jobs** on the release run, within 30 days. A re-run `Publish to TestPyPI` uploads the same bytes from the run's artifact, which the index accepts (HTTP 200 for a byte-identical file), and repeats its check; the install check then runs again.
 - **The install check failed for real** (the package does not install or its check fails, and a re-run fails the same way): cut a new patch version. If unsure, re-run the failed jobs first: index lag passes on a re-run, and a real failure repeats. A same-version re-cut cannot fix it, since the index refuses new bytes under a file name it already holds; never delete and publish a Release again to retry: a re-cut's run becomes the tag's newest release run, TestPyPI refuses its files, and rung 1 then refuses the tag (what is left is "Re-run failed jobs" on the original release run, within 30 days of it, then a new patch version).
 
-A failed `Verify PyPI serves exactly these files` is not in that list: the step runs after the upload, so this run's files are already on PyPI. If PyPI lists a file this run did not build, or another sha256, find which upload put it there; only a new patch version ships tested files under a clean version.
+A failed `Verify PyPI serves exactly these files` is not in that list: the step runs after the upload, so this run's files are already on PyPI. It has two causes, and they need different fixes:
+
+- **A mismatch** (PyPI lists a file this run did not build, or another sha256): find which upload put it there; only a new patch version ships tested files under a clean version.
+- **The check gave up waiting** (PyPI's JSON did not list the files in time): index lag, not a wrong file. **Re-run failed jobs** on the run whose check gave up (the release run, or the republish's dispatch run), within 30 days of that run. The re-run job uploads the same bytes again, which the index accepts, and repeats the check. Re-running the job needs a fresh `pypi` approval.
 
 Each rung acts on the workflow as of the tag: a tag cut before juniper-cascor-client#199 has no rung 1, and one cut before this change runs rung 1 without the check of the release run's TestPyPI jobs.
 Never "Re-run all jobs" on a publish run, nor `gh run rerun <id>` without `--failed`.
@@ -1013,5 +1016,5 @@ isort --check-only juniper_cascor_client  # Import order
 ---
 
 **Last Updated:** November 26, 2026
-**Version:** 0.1.7
+**Version:** 0.1.8
 **Maintainer:** Paul Calnon

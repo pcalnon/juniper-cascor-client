@@ -274,6 +274,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     against a release run and a TestPyPI that name different files, the install step's own shell against stand-in
     `pip`, `python` and `sleep`, and its package check against a real interpreter, `PYTHONOPTIMIZE` set or not. Each of
     38 edits to a copy of the workflow, one at a time, fails the tests.
+- **`docs/REFERENCE.md` gives both causes of a failed `Verify PyPI serves exactly these files`.** #206's text gave
+  only a mismatch (PyPI lists a file this run did not build, or another sha256), which needs a new patch version. A
+  check that gave up waiting is index lag: the files are already on PyPI, and "Re-run failed jobs" on the run whose
+  check gave up, within 30 days of it, re-uploads the same bytes and repeats the check, behind a fresh `pypi` approval.
 
 ## [0.8.0] - 2026-09-05
 
